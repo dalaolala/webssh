@@ -53,8 +53,10 @@
                 </span>
                 <span v-else class="server-node">
                   <el-icon><Monitor /></el-icon>
-                  <span class="server-name" @click="handleServerClick(data)">{{ data.label }}</span>
-                  <span class="server-info">{{ data.host }}:{{ data.port }}</span>
+                  <div class="server-info-wrapper">
+                    <div class="server-name" @click="handleServerClick(data)">{{ data.label }}</div>
+                    <div class="server-address">{{ data.host }}:{{ data.port }}</div>
+                  </div>
                   <el-dropdown trigger="click" @command="handleServerAction(data.serverId, $event)" @click.stop>
                     <el-button class="server-actions" size="small" text @click.stop>
                       <el-icon><More /></el-icon>
@@ -95,25 +97,32 @@
           
           <div class="features">
             <el-row :gutter="20">
-              <el-col :span="8">
-                <div class="feature-card">
+              <el-col :span="6">
+                <div class="feature-card" @click="$router.push('/terminal-new')" style="cursor: pointer;">
                   <el-icon size="48" color="#409EFF"><Monitor /></el-icon>
-                  <h3>SSH 终端</h3>
-                  <p>支持标准SSH协议，提供完整的终端体验</p>
+                  <h3>Web 终端</h3>
+                  <p>多页签终端管理，支持同时连接多个服务器</p>
                 </div>
               </el-col>
-              <el-col :span="8">
+              <el-col :span="6">
                 <div class="feature-card">
                   <el-icon size="48" color="#67C23A"><Lock /></el-icon>
                   <h3>安全加密</h3>
                   <p>AES-256加密存储，保障服务器信息安全</p>
                 </div>
               </el-col>
-              <el-col :span="8">
+              <el-col :span="6">
                 <div class="feature-card">
                   <el-icon size="48" color="#E6A23C"><Folder /></el-icon>
                   <h3>分组管理</h3>
                   <p>支持服务器分组，方便管理和快速访问</p>
+                </div>
+              </el-col>
+              <el-col :span="6">
+                <div class="feature-card" @click="$router.push('/quick-connect')" style="cursor: pointer;">
+                  <el-icon size="48" color="#F56C6C"><Connection /></el-icon>
+                  <h3>快速连接</h3>
+                  <p>无需保存服务器信息，快速建立SSH连接</p>
                 </div>
               </el-col>
             </el-row>
@@ -355,16 +364,32 @@ onMounted(async () => {
   margin-bottom: 20px;
 }
 
+/* 树形组件样式调整 */
+:deep(.el-tree-node__content) {
+  height: 56px !important;
+  padding: 0 16px !important;
+  margin-bottom: 0 !important;
+  transition: all 0.3s ease !important;
+}
+
+:deep(.el-tree-node) {
+  margin-bottom: 0 !important;
+}
+
 .tree-node {
   display: flex;
   align-items: center;
   width: 100%;
-  padding: 4px 0;
+  padding: 6px 0;
+  min-height: 48px;
+  box-sizing: border-box;
 }
 
 .group-node {
   font-weight: 600;
   color: #333;
+  padding: 8px 0;
+  min-height: 40px;
 }
 
 .server-node {
@@ -372,25 +397,39 @@ onMounted(async () => {
   justify-content: space-between;
   align-items: center;
   width: 100%;
-  padding: 4px 8px;
+  padding: 8px;
   border-radius: 4px;
   transition: all 0.3s;
+  min-height: 56px;
+  box-sizing: border-box;
 }
 
 .server-node:hover {
   background-color: #f5f7fa;
 }
 
-.server-name {
+.server-info-wrapper {
   flex: 1;
   margin: 0 8px;
-  font-weight: 500;
+  min-width: 0;
 }
 
-.server-info {
-  font-size: 12px;
+.server-name {
+  font-weight: 500;
+  font-size: 14px;
+  color: #333;
+  cursor: pointer;
+  margin-bottom: 2px;
+}
+
+.server-name:hover {
+  color: #409eff;
+}
+
+.server-address {
+  font-size: 11px;
   color: #999;
-  margin-right: 8px;
+  opacity: 0.8;
 }
 
 .server-actions {

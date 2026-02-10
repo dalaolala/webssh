@@ -31,6 +31,12 @@ const routes = [
     name: 'QuickConnect',
     component: () => import('@/views/QuickConnect.vue'),
     meta: { requiresAuth: true }
+  },
+  {
+    path: '/terminal-new',
+    name: 'TerminalNew',
+    component: () => import('@/views/TerminalNew.vue'),
+    meta: { requiresAuth: true }
   }
 ]
 
