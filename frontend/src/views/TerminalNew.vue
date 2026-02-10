@@ -199,6 +199,7 @@ import { useTerminalStore } from '@/stores/terminal'
 import { useServersStore } from '@/stores/servers'
 import { useAuthStore } from '@/stores/auth'
 import QuickConnect from './QuickConnect.vue'
+import { io } from 'socket.io-client'
 
 const authStore = useAuthStore()
 const terminalStore = useTerminalStore()
@@ -267,7 +268,8 @@ const createNewTab = () => {
     connecting: false,
     error: null,
     terminal: null,
-    fitAddon: null
+    fitAddon: null,
+    socket: null
   }
   
   tabs.value.push(newTab)
@@ -330,7 +332,9 @@ const initTerminal = (tab) => {
   // 设置终端输入处理
   tab.terminal.onData((data) => {
     if (tab.connected) {
-      terminalStore.sendInput(data)
+      if (tab.socket) {
+        tab.socket.emit('ssh-input', data)
+      }
     } else {
       tab.terminal.write('\r\n\x1b[31m未连接到服务器，请先连接\x1b[0m\r\n')
     }
@@ -405,7 +409,8 @@ const createNewTabForServer = async (server) => {
     connecting: false,
     error: null,
     terminal: null,
-    fitAddon: null
+    fitAddon: null,
+    socket: null
   }
   
   tabs.value.push(newTab)
@@ -429,69 +434,78 @@ const performConnection = async (tab, serverId) => {
   tab.error = null
   
   try {
-    // 初始化Socket连接
-    if (!terminalStore.socket) {
-      await terminalStore.connectSocket(authStore.token)
-    }
-    
-    // 获取服务器认证信息
-    const result = await serversStore.getServerCredentials(serverId)
-    if (!result.success) {
-      throw new Error(result.error || '获取认证信息失败')
-    }
-    
-    // 清空终端并显示连接信息
-    if (tab.terminal) {
-      tab.terminal.clear()
-      tab.terminal.write('\x1b[33m正在连接服务器...\x1b[0m\r\n')
-    }
-    
-    // 连接服务器
-    await terminalStore.connectToServer(serverId)
-    
-    // 监听连接状态变化
-    const unwatch = watch(() => terminalStore.isConnected, (isConnected) => {
-      if (isConnected) {
-        tab.connected = true
-        tab.connecting = false
+    // 为当前标签创建独立的Socket连接
+    tab.socket = io({
+      auth: { token: authStore.token }
+    })
+    // 认证
+    tab.socket.on('connect', () => {
+      tab.socket.emit('authenticate', authStore.token)
+    })
+    tab.socket.on('authenticated', (data) => {
+      if (data.success) {
+        // 显示连接提示
         if (tab.terminal) {
           tab.terminal.clear()
-          tab.terminal.write('\x1b[32mSSH连接已建立，可以开始输入命令\x1b[0m\r\n\r\n')
+          tab.terminal.write('\x1b[33m正在连接服务器...\x1b[0m\r\n')
         }
-        unwatch()
-      }
-    })
-    
-    // 监听错误
-    const errorWatch = watch(() => terminalStore.connectionError, (error) => {
-      if (error) {
+        // 发起SSH连接
+        tab.socket.emit('connect-ssh', serverId)
+      } else {
         tab.connecting = false
-        tab.error = error
+        tab.error = '认证失败'
         if (tab.terminal) {
-          tab.terminal.write(`\r\n\x1b[31m连接错误: ${error}\x1b[0m\r\n`)
-        }
-        errorWatch()
-      }
-    })
-    
-    // 监听终端输出
-    const outputWatch = watch(() => terminalStore.terminalOutput, (newOutput, oldOutput) => {
-      if (tab.terminal && tab.connected) {
-        const newData = newOutput.slice(oldOutput.length)
-        if (newData) {
-          tab.terminal.write(newData)
+          tab.terminal.write('\r\n\x1b[31m认证失败\x1b[0m\r\n')
         }
       }
     })
-    
-    // 设置超时
+    // 连接成功
+    tab.socket.on('ssh-connected', () => {
+      tab.connected = true
+      tab.connecting = false
+      tab.error = null
+      if (tab.terminal) {
+        tab.terminal.clear()
+        tab.terminal.write('\x1b[32mSSH连接已建立，可以开始输入命令\x1b[0m\r\n\r\n')
+      }
+    })
+    // 终端输出
+    tab.socket.on('ssh-data', (data) => {
+      const output = typeof data === 'string' ? data : String(data)
+      if (tab.terminal) {
+        tab.terminal.write(output)
+      }
+    })
+    // 错误
+    tab.socket.on('ssh-error', (data) => {
+      tab.connecting = false
+      tab.connected = false
+      tab.error = data.error || '连接错误'
+      if (tab.terminal) {
+        tab.terminal.write(`\r\n\x1b[31m连接错误: ${tab.error}\x1b[0m\r\n`)
+      }
+    })
+    // 连接关闭
+    tab.socket.on('ssh-closed', () => {
+      tab.connected = false
+      tab.connecting = false
+      if (tab.terminal) {
+        tab.terminal.write('\r\n\x1b[33m连接已关闭\x1b[0m\r\n')
+      }
+    })
+    // Socket断开
+    tab.socket.on('disconnect', () => {
+      tab.connected = false
+      tab.connecting = false
+    })
+    // 超时处理
     setTimeout(() => {
       if (!tab.connected && !tab.error) {
         tab.connecting = false
         tab.error = '连接超时'
-        unwatch()
-        errorWatch()
-        outputWatch()
+        if (tab.terminal) {
+          tab.terminal.write('\r\n\x1b[31m连接超时\x1b[0m\r\n')
+        }
       }
     }, 30000)
     
@@ -535,7 +549,11 @@ const closeTab = async (tabId) => {
   
   // 断开连接
   if (tab && tab.connected) {
-    terminalStore.disconnect()
+    if (tab.socket) {
+      tab.socket.emit('disconnect-ssh')
+      tab.socket.disconnect()
+      tab.socket = null
+    }
   }
   
   // 清理终端资源
@@ -693,12 +711,14 @@ const handleResize = () => {
       if (tab.connected) {
         const dimensions = tab.fitAddon.proposeDimensions()
         if (dimensions) {
-          terminalStore.resizeTerminal({
-            rows: dimensions.rows,
-            cols: dimensions.cols,
-            height: dimensions.height,
-            width: dimensions.width
-          })
+          if (tab.socket) {
+            tab.socket.emit('resize', {
+              rows: dimensions.rows,
+              cols: dimensions.cols,
+              height: dimensions.height,
+              width: dimensions.width
+            })
+          }
         }
       }
     }
@@ -722,10 +742,12 @@ onUnmounted(() => {
     if (tab.terminal) {
       tab.terminal.dispose()
     }
+    if (tab.socket) {
+      tab.socket.emit('disconnect-ssh')
+      tab.socket.disconnect()
+      tab.socket = null
+    }
   })
-  
-  // 断开Socket连接
-  terminalStore.disconnectSocket()
   
   // 移除事件监听器
   window.removeEventListener('resize', handleResize)
