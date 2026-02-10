@@ -120,7 +120,28 @@
                   :data-tab-id="tab.id"
                   class="terminal"
                   @click="focusTerminal(tab.id)"
+                  @contextmenu.prevent="onContextMenu($event, tab.id)"
                 ></div>
+                <div 
+                  v-if="contextMenu.visible && contextMenu.tabId === tab.id" 
+                  class="context-menu" 
+                  :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
+                  @click.stop
+                >
+                  <div 
+                    class="menu-item" 
+                    :class="{ disabled: !hasSelection(tab.id) }" 
+                    @click="copyFromContextMenu(tab.id)"
+                  >
+                    <span>复制选中</span>
+                  </div>
+                  <div class="menu-item" @click="pasteFromContextMenu(tab.id)">
+                    <span>粘贴剪贴板</span>
+                  </div>
+                  <div class="menu-item" @click="clearFromContextMenu(tab.id)">
+                    <span>清屏</span>
+                  </div>
+                </div>
                 
                 <!-- 连接状态提示 -->
                 <div 
@@ -209,6 +230,7 @@ const router = useRouter()
 const terminalRefs = ref({})
 const tabs = ref([])
 const activeTabId = ref(null)
+const contextMenu = ref({ visible: false, x: 0, y: 0, tabId: null })
 
 // 计算属性：树型结构数据
 const serverTreeData = computed(() => {
@@ -269,7 +291,9 @@ const createNewTab = () => {
     error: null,
     terminal: null,
     fitAddon: null,
-    socket: null
+    socket: null,
+    autoScroll: true,
+    viewportWheelHandler: null
   }
   
   tabs.value.push(newTab)
@@ -295,7 +319,7 @@ const initTerminal = (tab) => {
       foreground: '#ffffff',
       cursor: '#ffffff',
       cursorAccent: '#ffffff',
-      selection: 'rgba(58, 134, 255, 0.3)',
+      selection: 'rgba(54, 99, 181, 0.35)',
       selectionForeground: undefined
     },
     disableStdin: false,
@@ -335,6 +359,9 @@ const initTerminal = (tab) => {
       if (tab.socket) {
         tab.socket.emit('ssh-input', data)
       }
+      if (tab.autoScroll && tab.terminal.scrollToBottom) {
+        tab.terminal.scrollToBottom()
+      }
     } else {
       tab.terminal.write('\r\n\x1b[31m未连接到服务器，请先连接\x1b[0m\r\n')
     }
@@ -342,6 +369,133 @@ const initTerminal = (tab) => {
   
   // 隐藏辅助输入框
   hideHelperTextarea(tab.id)
+
+  tab.terminal.attachCustomKeyEventHandler((event) => {
+    if ((event.ctrlKey || event.metaKey) && !['c', 'v', 'a', 'z', 'x', 'y'].includes(event.key.toLowerCase())) {
+      event.preventDefault()
+    }
+    return true
+  })
+
+  tab.terminal.attachCustomKeyEventHandler((event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v') {
+      event.preventDefault()
+      navigator.clipboard.readText().then(text => {
+        if (tab.connected && tab.socket) {
+          tab.socket.emit('ssh-input', text)
+          if (tab.autoScroll && tab.terminal.scrollToBottom) {
+            tab.terminal.scrollToBottom()
+          }
+        }
+      }).catch(() => {})
+      return false
+    }
+    return true
+  })
+
+  tab.terminal.attachCustomKeyEventHandler((event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
+      const selection = tab.terminal.getSelection()
+      if (selection) {
+        navigator.clipboard.writeText(selection).catch(() => {})
+      }
+    }
+    return true
+  })
+
+  tab.terminal.attachCustomKeyEventHandler((event) => {
+    if (event.code === 'Space' || event.key === ' ') {
+      event.preventDefault()
+      if (tab.connected && tab.socket) {
+        tab.socket.emit('ssh-input', ' ')
+        if (tab.autoScroll && tab.terminal.scrollToBottom) {
+          tab.terminal.scrollToBottom()
+        }
+      }
+      return false
+    }
+    return true
+  })
+
+  const viewportEl = terminalEl.querySelector('.xterm-viewport')
+  if (viewportEl) {
+    const handler = (e) => {
+      const mode = e.deltaMode
+      const unit = mode === 1 ? 40 : (mode === 2 ? viewportEl.clientHeight : 1)
+      const delta = e.deltaY * unit
+      const next = Math.min(
+        viewportEl.scrollHeight - viewportEl.clientHeight,
+        Math.max(0, viewportEl.scrollTop + delta)
+      )
+      e.preventDefault()
+      viewportEl.scrollTop = next
+      const nearBottom = viewportEl.scrollTop >= (viewportEl.scrollHeight - viewportEl.clientHeight - 2)
+      // 用户滚动时，如果不在底部则关闭自动滚动；到达底部后开启自动滚动
+      tab.autoScroll = nearBottom
+    }
+    viewportEl.addEventListener('wheel', handler, { passive: false })
+    tab.viewportWheelHandler = handler
+  }
+}
+
+const onContextMenu = (event, tabId) => {
+  contextMenu.value = { visible: true, x: event.clientX, y: event.clientY, tabId }
+  document.addEventListener('click', hideContextMenuOnce, { once: true })
+}
+
+const hideContextMenuOnce = () => {
+  contextMenu.value.visible = false
+}
+
+const getTabById = (tabId) => tabs.value.find(t => t.id === tabId)
+
+const hasSelection = (tabId) => {
+  const tab = getTabById(tabId)
+  if (!tab || !tab.terminal) return false
+  const sel = tab.terminal.getSelection()
+  return !!sel && sel.length > 0
+}
+
+const copyFromContextMenu = async (tabId) => {
+  const tab = getTabById(tabId)
+  if (!tab || !tab.terminal) return
+  const selection = tab.terminal.getSelection()
+  if (selection) {
+    try {
+      await navigator.clipboard.writeText(selection)
+    } catch {}
+  }
+  contextMenu.value.visible = false
+}
+
+const pasteFromContextMenu = async (tabId) => {
+  const tab = getTabById(tabId)
+  if (!tab || !tab.socket || !tab.connected) return
+  try {
+    const text = await navigator.clipboard.readText()
+    if (text) {
+      tab.socket.emit('ssh-input', text)
+      if (tab.autoScroll && tab.terminal && tab.terminal.scrollToBottom) {
+        tab.terminal.scrollToBottom()
+      }
+    }
+  } catch {}
+  contextMenu.value.visible = false
+}
+
+const clearFromContextMenu = (tabId) => {
+  const tab = getTabById(tabId)
+  if (!tab || !tab.terminal) return
+  tab.terminal.reset()
+  tab.terminal.focus()
+  tab.terminal.write('\x1b[32mSSH连接已建立，可以开始输入命令\x1b[0m\r\n\r\n')
+  tab.terminal.write('\x1b[?25h')
+  const terminalEl = document.querySelector(`[data-tab-id="${tab.id}"]`)
+  const viewportEl = terminalEl?.querySelector('.xterm-viewport')
+  if (viewportEl) {
+    viewportEl.scrollTop = 0
+  }
+  contextMenu.value.visible = false
 }
 
 // 隐藏辅助输入框
@@ -410,7 +564,9 @@ const createNewTabForServer = async (server) => {
     error: null,
     terminal: null,
     fitAddon: null,
-    socket: null
+    socket: null,
+    autoScroll: true,
+    viewportWheelHandler: null
   }
   
   tabs.value.push(newTab)
@@ -474,6 +630,9 @@ const performConnection = async (tab, serverId) => {
       const output = typeof data === 'string' ? data : String(data)
       if (tab.terminal) {
         tab.terminal.write(output)
+        if (tab.autoScroll && tab.terminal.scrollToBottom) {
+          tab.terminal.scrollToBottom()
+        }
       }
     })
     // 错误
@@ -559,6 +718,14 @@ const closeTab = async (tabId) => {
   // 清理终端资源
   if (tab && tab.terminal) {
     tab.terminal.dispose()
+  }
+  if (tab && tab.viewportWheelHandler) {
+    const terminalEl = document.querySelector(`[data-tab-id="${tab.id}"]`)
+    const viewportEl = terminalEl?.querySelector('.xterm-viewport')
+    if (viewportEl) {
+      viewportEl.removeEventListener('wheel', tab.viewportWheelHandler)
+    }
+    tab.viewportWheelHandler = null
   }
   
   // 移除页签
@@ -1046,6 +1213,7 @@ onUnmounted(() => {
   height: 100%;
   padding: 0;
   cursor: text;
+  position: relative;
 }
 
 .connection-prompt,
@@ -1081,16 +1249,40 @@ onUnmounted(() => {
   position: relative !important;
   height: 100% !important;
   width: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
 }
 
 :deep(.xterm-viewport) {
   background-color: #1e1e1e !important;
   overflow-y: auto !important;
   overflow-x: hidden !important;
+  overscroll-behavior: contain;
+  direction: ltr !important;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.3) rgba(255, 255, 255, 0.1);
+  position: relative !important;
+  width: 100% !important;
+  height: 100% !important;
+  pointer-events: auto !important;
 }
 
 :deep(.xterm-screen) {
   background-color: #1e1e1e !important;
+  width: 100% !important;
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+:deep(.xterm .xterm-selection) {
+  background-color: rgba(54, 99, 181, 0.35) !important;
+  border-radius: 2px;
+  mix-blend-mode: screen;
+}
+
+:deep(.xterm-selection-layer) {
+  background-color: rgba(54, 99, 181, 0.35) !important;
 }
 
 :deep(.xterm-helper-textarea) {
@@ -1126,5 +1318,39 @@ onUnmounted(() => {
 
 :deep(.xterm-viewport::-webkit-scrollbar-thumb:hover) {
   background: rgba(255, 255, 255, 0.5);
+}
+
+.context-menu {
+  position: fixed;
+  background: #2d2d30;
+  border: 1px solid #3e3e42;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 1000;
+  min-width: 160px;
+  padding: 6px 0;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 16px;
+  cursor: pointer;
+  color: #ffffff;
+  font-size: 13px;
+  transition: background-color 0.2s ease;
+}
+
+.menu-item:hover {
+  background-color: rgba(58, 134, 255, 0.2);
+}
+
+.menu-item.disabled {
+  color: #6c6c6c;
+  cursor: not-allowed;
+}
+
+.menu-item.disabled:hover {
+  background-color: transparent;
 }
 </style>
