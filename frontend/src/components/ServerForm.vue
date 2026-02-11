@@ -79,6 +79,10 @@ const props = defineProps({
   serverId: {
     type: Number,
     default: null
+  },
+  groupName: {
+    type: String,
+    default: ''
   }
 })
 
@@ -99,20 +103,12 @@ const form = reactive({
   authType: 'password',
   password: '',
   privateKey: '',
-  groupName: 'Default'
+  groupName: props.groupName || 'Default'
 })
 
-// 获取已存在的分组列表
+// 获取分组列表
 const existingGroups = computed(() => {
-  const groups = new Set()
-  serversStore.servers.forEach(server => {
-    // 兼容 groupName 和 group_name 字段
-    const groupName = server.groupName || server.group_name
-    if (groupName) {
-      groups.add(groupName)
-    }
-  })
-  return Array.from(groups)
+  return serversStore.groups.map(group => group.name)
 })
 
 const rules = {
@@ -198,6 +194,11 @@ const loadServerData = async () => {
   
   loading.value = true
   try {
+    // 确保服务器列表已加载
+    if (serversStore.servers.length === 0) {
+      await serversStore.fetchServers()
+    }
+    
     const result = await serversStore.getServerCredentials(props.serverId)
     if (result.success) {
       const { server, credentials } = result.data
@@ -207,7 +208,7 @@ const loadServerData = async () => {
       form.port = server.port
       form.username = server.username
       form.authType = server.authType
-      form.groupName = server.groupName
+      form.groupName = server.group_name || server.groupName || 'Default'
       
       if (server.authType === 'password') {
         form.password = credentials.password || ''
@@ -224,10 +225,67 @@ const loadServerData = async () => {
   }
 }
 
+// 监听分组数据变化，确保分组选择器有正确的数据
+watch(() => serversStore.groups, (newGroups) => {
+  if (newGroups.length > 0 && !props.serverId) {
+    // 添加模式下，确保分组数据正确设置
+    if (props.groupName) {
+      form.groupName = props.groupName
+    } else {
+      form.groupName = newGroups[0].name
+    }
+  }
+}, { immediate: true })
+
+// 监听serverId变化，确保每次打开编辑对话框都重新加载数据
+watch(() => props.serverId, (newServerId) => {
+  if (newServerId) {
+    // 重置表单数据，确保重新加载
+    Object.keys(form).forEach(key => {
+      if (key === 'port') {
+        form[key] = 22
+      } else if (key === 'authType') {
+        form[key] = 'password'
+      } else if (key === 'groupName') {
+        // 编辑模式下重置为默认值
+        form[key] = 'Default'
+      } else {
+        form[key] = ''
+      }
+    })
+    newGroupName.value = ''
+    
+    // 延迟加载数据，确保DOM已更新
+    setTimeout(() => {
+      loadServerData()
+    }, 0)
+  } else {
+    // 添加模式下，确保分组数据正确设置
+    if (props.groupName) {
+      form.groupName = props.groupName
+    } else if (serversStore.groups.length > 0) {
+      form.groupName = serversStore.groups[0].name
+    }
+  }
+}, { immediate: true })
+
 // 组件挂载时加载数据
-onMounted(() => {
-  if (props.serverId) {
-    loadServerData()
+onMounted(async () => {
+  // 确保分组数据已加载
+  if (serversStore.groups.length === 0) {
+    await serversStore.fetchGroups()
+  }
+  
+  // 添加模式下，确保分组数据正确设置
+  if (!props.serverId) {
+    // 如果传入了分组名称，使用传入的分组
+    if (props.groupName) {
+      form.groupName = props.groupName
+    }
+    // 如果没有分组数据，确保至少有一个默认分组
+    else if (serversStore.groups.length > 0) {
+      form.groupName = serversStore.groups[0].name
+    }
   }
 })
 

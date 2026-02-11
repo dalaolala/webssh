@@ -67,14 +67,58 @@
 ### 数据库设计
 ```sql
 -- 用户表
-users (id, email, phone, password_hash, created_at, updated_at)
+CREATE TABLE IF NOT EXISTS users (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  phone VARCHAR(20),
+  password_hash VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- 分组表
+CREATE TABLE IF NOT EXISTS `groups` (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  description TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE KEY unique_user_group (user_id, name)
+);
 
 -- 服务器表
-servers (id, user_id, name, host, port, username, password_encrypted, 
-         private_key_encrypted, auth_type, group_name, created_at, updated_at)
+CREATE TABLE IF NOT EXISTS servers (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  host VARCHAR(255) NOT NULL,
+  port INT DEFAULT 22,
+  username VARCHAR(255) NOT NULL,
+  password_encrypted TEXT,
+  private_key_encrypted TEXT,
+  auth_type ENUM('password', 'key') DEFAULT 'password',
+  group_id INT,
+  group_name VARCHAR(255) DEFAULT 'Default',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE SET NULL
+);
 
 -- 连接日志表
-connection_logs (id, user_id, server_id, host, start_time, end_time, duration)
+CREATE TABLE IF NOT EXISTS connection_logs (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  server_id INT,
+  host VARCHAR(255) NOT NULL,
+  start_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  end_time TIMESTAMP NULL,
+  duration INT DEFAULT 0,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE SET NULL
+);
 ```
 
 ## 📁 项目结构
@@ -131,6 +175,14 @@ cd webssh
 ```
 
 ### 2. 数据库设置
+
+#### 方式一：使用安装脚本（推荐）
+```bash
+# 使用安装脚本自动创建数据库和表结构
+mysql -u root -p < install.sql
+```
+
+#### 方式二：手动创建数据库
 ```sql
 -- 创建数据库
 CREATE DATABASE webssh CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -140,6 +192,17 @@ CREATE USER 'webssh'@'localhost' IDENTIFIED BY 'webssh';
 GRANT ALL PRIVILEGES ON webssh.* TO 'webssh'@'localhost';
 FLUSH PRIVILEGES;
 ```
+
+#### 方式三：系统初始化
+```sql
+-- 如果需要重新初始化系统，使用初始化脚本
+mysql -u root -p < init.sql
+```
+
+**重要说明**：
+- 第一次安装推荐使用 `install.sql` 脚本
+- 如果系统已运行，使用 `init.sql` 会保留现有数据
+- 安装脚本会自动处理数据迁移和分组关联
 
 ### 3. 安装依赖
 ```bash
@@ -186,6 +249,26 @@ ENCRYPTION_KEY=abcdefghijklmnopqrstuvwxyz123456
 - `ENCRYPTION_KEY` 必须是正好32字节的字符串
 - 生产环境请使用强密码生成器创建安全的密钥
 - 不要将真实的密钥提交到版本控制系统
+
+### 4.5 数据库初始化验证
+
+数据库初始化完成后，后端服务会自动创建必要的表结构。如果遇到表结构错误，可以手动执行：
+
+```bash
+# 检查数据库表结构
+mysql -u root -p -D webssh -e "SHOW TABLES;"
+
+# 验证表结构
+mysql -u root -p -D webssh -e "DESCRIBE servers; DESCRIBE \`groups\`;"
+
+# 如果表结构不完整，执行更新脚本
+mysql -u root -p < update_tables.sql
+```
+
+**常见问题解决**：
+- 如果遇到 `Unknown column 'group_id'` 错误，运行 `update_tables.sql`
+- 如果遇到 `groups` 表语法错误，确保表名使用反引号
+- 如果分组数据不显示，运行 `generate_groups_data.sql`
 
 ### 5. 启动应用
 

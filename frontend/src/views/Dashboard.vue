@@ -112,7 +112,7 @@
                 </div>
               </el-col>
               <el-col :span="6">
-                <div class="feature-card">
+                <div class="feature-card" @click="$router.push('/group-management')" style="cursor: pointer;">
                   <el-icon size="48" color="#E6A23C"><Folder /></el-icon>
                   <h3>分组管理</h3>
                   <p>支持服务器分组，方便管理和快速访问</p>

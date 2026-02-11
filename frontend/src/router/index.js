@@ -37,6 +37,12 @@ const routes = [
     name: 'TerminalNew',
     component: () => import('@/views/TerminalNew.vue'),
     meta: { requiresAuth: true }
+  },
+  {
+    path: '/group-management',
+    name: 'GroupManagement',
+    component: () => import('@/views/GroupManagement.vue'),
+    meta: { requiresAuth: true }
   }
 ]
 

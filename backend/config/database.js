@@ -50,6 +50,20 @@ const initializeTables = async () => {
       )
     `);
 
+    // Groups table
+    await pool.execute(`
+      CREATE TABLE IF NOT EXISTS \`groups\` (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        description TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        UNIQUE KEY unique_user_group (user_id, name)
+      )
+    `);
+
     // Servers table (with encrypted credentials)
     await pool.execute(`
       CREATE TABLE IF NOT EXISTS servers (
@@ -62,10 +76,12 @@ const initializeTables = async () => {
         password_encrypted TEXT,
         private_key_encrypted TEXT,
         auth_type ENUM('password', 'key') DEFAULT 'password',
+        group_id INT,
         group_name VARCHAR(255) DEFAULT 'Default',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (group_id) REFERENCES \`groups\`(id) ON DELETE SET NULL
       )
     `);
 

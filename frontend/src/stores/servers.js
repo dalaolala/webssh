@@ -142,6 +142,69 @@ export const useServersStore = defineStore('servers', () => {
     return servers.value.filter(server => server.group_name === groupName)
   }
 
+  // 添加服务器分组
+  const addGroup = async (groupData) => {
+    try {
+      const response = await axios.post('/api/servers/groups', groupData, {
+        headers: {
+          'Authorization': `Bearer ${authStore.token}`
+        }
+      })
+      
+      await fetchGroups()
+      return { success: true, data: response.data }
+    } catch (error) {
+      return { 
+        success: false, 
+        error: error.response?.data?.error || '添加分组失败' 
+      }
+    }
+  }
+
+  // 更新服务器分组
+  const updateGroup = async (groupId, groupData) => {
+    try {
+      await axios.put(`/api/servers/groups/${groupId}`, groupData, {
+        headers: {
+          'Authorization': `Bearer ${authStore.token}`
+        }
+      })
+      
+      await fetchGroups()
+      return { success: true }
+    } catch (error) {
+      return { 
+        success: false, 
+        error: error.response?.data?.error || '更新分组失败' 
+      }
+    }
+  }
+
+  // 删除服务器分组
+  const deleteGroup = async (groupId, deleteServers = false) => {
+    try {
+      await axios.delete(`/api/servers/groups/${groupId}?deleteServers=${deleteServers}`, {
+        headers: {
+          'Authorization': `Bearer ${authStore.token}`
+        }
+      })
+      
+      await fetchGroups()
+      await fetchServers()
+      return { success: true }
+    } catch (error) {
+      return { 
+        success: false, 
+        error: error.response?.data?.error || '删除分组失败' 
+      }
+    }
+  }
+
+  // 获取所有分组名称（用于表单选择）
+  const getGroupNames = () => {
+    return groups.value.map(group => group.name)
+  }
+
   return {
     servers,
     groups,
@@ -152,6 +215,10 @@ export const useServersStore = defineStore('servers', () => {
     deleteServer,
     getServerCredentials,
     testConnection,
-    getServersByGroup
+    getServersByGroup,
+    addGroup,
+    updateGroup,
+    deleteGroup,
+    getGroupNames
   }
 })
