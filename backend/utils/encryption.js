@@ -9,10 +9,27 @@ const AUTH_TAG_LENGTH = 16;
 
 class EncryptionService {
   constructor() {
-    this.encryptionKey = process.env.ENCRYPTION_KEY || 'default-encryption-key-32bytes-long';
-    if (!this.encryptionKey || this.encryptionKey.length !== 32) {
+    let key = (process.env.ENCRYPTION_KEY || '').trim();
+    if (/^[0-9a-fA-F]{64}$/.test(key)) {
+      key = key.substring(0, 32);
+    }
+    if (!key || key.length !== 32) {
+      const raw = (process.env.ENCRYPTION_KEY || '').trim();
+      const preview = raw ? (raw.slice(0, 4) + '...' + raw.slice(-4)) : '(empty)';
+      const len = raw ? raw.length : 0;
+      let fingerprint = '';
+      try { fingerprint = crypto.createHash('sha256').update(raw).digest('hex').slice(0, 16); } catch {}
+      console.error('ENCRYPTION_KEY_RAW=', raw);
+      console.error('Invalid ENCRYPTION_KEY: length=%s, preview=%s, hex64=%s, fingerprint=%s', String(len), preview, /^[0-9a-fA-F]{64}$/.test(raw) ? 'true' : 'false', fingerprint);
+      if (String(process.env.ALLOW_WEAK_ENCRYPTION).toLowerCase() === 'true') {
+        const weak = (raw || '').padEnd(32, '0').slice(0, 32);
+        console.error('ALLOW_WEAK_ENCRYPTION enabled: using fallback key of length 32 to keep service alive');
+        this.encryptionKey = weak;
+        return;
+      }
       throw new Error('ENCRYPTION_KEY must be exactly 32 bytes long');
     }
+    this.encryptionKey = key;
   }
 
   /**

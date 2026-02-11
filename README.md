@@ -193,6 +193,63 @@ GRANT ALL PRIVILEGES ON webssh.* TO 'webssh'@'localhost';
 FLUSH PRIVILEGES;
 ```
 
+### 建表SQL（MySQL）
+```sql
+-- 用户表
+CREATE TABLE IF NOT EXISTS users (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  phone VARCHAR(20),
+  password_hash VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 分组表
+CREATE TABLE IF NOT EXISTS groups (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  description TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_groups_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE KEY unique_user_group (user_id, name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 服务器表
+CREATE TABLE IF NOT EXISTS servers (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  host VARCHAR(255) NOT NULL,
+  port INT DEFAULT 22,
+  username VARCHAR(255) NOT NULL,
+  password_encrypted TEXT,
+  private_key_encrypted TEXT,
+  auth_type ENUM('password', 'key') DEFAULT 'password',
+  group_id INT,
+  group_name VARCHAR(255) DEFAULT 'Default',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_servers_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_servers_group FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 连接日志表
+CREATE TABLE IF NOT EXISTS connection_logs (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  server_id INT,
+  host VARCHAR(255) NOT NULL,
+  start_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  end_time TIMESTAMP NULL,
+  duration INT DEFAULT 0,
+  CONSTRAINT fk_logs_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_logs_server FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+```
+
 #### 方式三：系统初始化
 ```sql
 -- 如果需要重新初始化系统，使用初始化脚本
@@ -249,6 +306,11 @@ ENCRYPTION_KEY=abcdefghijklmnopqrstuvwxyz123456
 - `ENCRYPTION_KEY` 必须是正好32字节的字符串
 - 生产环境请使用强密码生成器创建安全的密钥
 - 不要将真实的密钥提交到版本控制系统
+
+生成一个符合要求的密钥：
+```bash
+openssl rand -hex 16  # 输出32字符长度的十六进制字符串
+```
 
 ### 4.5 数据库初始化验证
 

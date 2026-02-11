@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  # WebSSH应用
+  webssh:
+    build: .
+    ports:
+      - "3000:3000"
+    # 环境变量从.env.production文件加载
+    env_file:
+      - .env.production
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/auth/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # MySQL数据库
+  mysql:
+    image: mysql:8.0
+    environment:
+      - MYSQL_ROOT_PASSWORD=root_password
+      - MYSQL_DATABASE=webssh
+      - MYSQL_USER=webssh_user
+      - MYSQL_PASSWORD=webssh_password
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./install.sql:/docker-entrypoint-initdb.d/install.sql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+
+volumes:
+  mysql_data:
