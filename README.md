@@ -1,172 +1,95 @@
 # WebSSH - 在线SSH终端工具
 
-一个基于Web的SSH终端工具，模仿Xshell的功能，提供完整的Web版SSH客户端体验。
+一个基于Web的SSH终端工具，提供完整的Web版SSH客户端体验。
 
-## ✨ 功能特性
+## ✨ 核心功能
 
-### ✅ 已实现功能
+- **用户认证**: 注册、登录、JWT令牌认证
+- **服务器管理**: 服务器增删改查、分组管理
+- **SSH终端**: 基于xterm.js的Web终端，支持密码和私钥认证
+- **数据安全**: AES-256加密存储敏感信息
 
-#### 用户认证系统 (P0)
-- 用户注册（邮箱+密码）
-- 用户登录（JWT令牌认证）
-- 密码加密存储（bcrypt）
-- 路由守卫和权限控制
+## 🚀 快速部署
 
-#### 服务器资产管理 (P0)
-- 服务器增删改查
-- 支持密码和私钥认证
-- AES-256加密存储敏感信息
-- 服务器分组管理
-- 树形结构展示
+### 📦 Docker 一键部署（推荐）
 
-#### SSH终端核心功能 (P0)
-- 基于xterm.js的Web终端
-- WebSocket实时通信
-- SSH2库后端连接
-- 终端窗口自适应
-- 命令输入和输出
-- 快捷键支持（Ctrl+C等）
+```bash
+# 一键部署（包含Docker环境检查、镜像构建、服务启动）
+./deploy.sh
 
-#### 前端界面 (P0)
-- Vue3 + Element Plus现代化界面
-- 响应式设计
-- 服务器管理面板
-- 终端界面
-- 快速连接功能
+# 部署完成后访问：http://localhost:3000
+```
 
-### 🔄 待实现功能
+**部署特点：**
+- 自动构建多阶段Docker镜像
+- 包含MySQL数据库服务
+- 自动生成安全的加密密钥
+- 健康检查和服务监控
 
-- [ ] SFTP文件传输功能 (P1)
-- [ ] 多标签页支持 (P1)
-- [ ] 分屏显示 (P1)
-- [ ] 终端外观定制 (P2)
-- [ ] 快捷命令功能 (P2)
-- [ ] 连接保持和自动重连 (P1)
-- [ ] 操作日志记录 (P2)
+### 🛠️ 手动部署
 
-## 🏗️ 技术架构
+**环境要求：** Node.js 16+, MySQL 5.7+
 
-### 前端技术栈
-- **框架**: Vue 3 + Vite
-- **UI组件库**: Element Plus
-- **终端组件**: xterm.js + xterm-addon-fit
-- **状态管理**: Pinia
-- **路由**: Vue Router
-- **HTTP客户端**: Axios
-- **WebSocket**: socket.io-client
+```bash
+# 1. 安装依赖
+npm install
 
-### 后端技术栈
-- **运行时**: Node.js
-- **Web框架**: Express.js
-- **SSH连接**: ssh2库
-- **实时通信**: Socket.IO
-- **数据库**: MySQL
-- **认证**: JWT + bcryptjs
-- **加密**: AES-256-GCM
+# 2. 数据库初始化
+mysql -u root -p < install.sql
 
-### 数据库设计
-```sql
--- 用户表
-CREATE TABLE IF NOT EXISTS users (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  email VARCHAR(255) UNIQUE NOT NULL,
-  phone VARCHAR(20),
-  password_hash VARCHAR(255) NOT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-);
+# 3. 环境配置
+cp backend/.env.example backend/.env
+# 编辑 backend/.env 文件
 
--- 分组表
-CREATE TABLE IF NOT EXISTS `groups` (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  user_id INT NOT NULL,
-  name VARCHAR(255) NOT NULL,
-  description TEXT,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-  UNIQUE KEY unique_user_group (user_id, name)
-);
-
--- 服务器表
-CREATE TABLE IF NOT EXISTS servers (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  user_id INT NOT NULL,
-  name VARCHAR(255) NOT NULL,
-  host VARCHAR(255) NOT NULL,
-  port INT DEFAULT 22,
-  username VARCHAR(255) NOT NULL,
-  password_encrypted TEXT,
-  private_key_encrypted TEXT,
-  auth_type ENUM('password', 'key') DEFAULT 'password',
-  group_id INT,
-  group_name VARCHAR(255) DEFAULT 'Default',
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-  FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE SET NULL
-);
-
--- 连接日志表
-CREATE TABLE IF NOT EXISTS connection_logs (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  user_id INT NOT NULL,
-  server_id INT,
-  host VARCHAR(255) NOT NULL,
-  start_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  end_time TIMESTAMP NULL,
-  duration INT DEFAULT 0,
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-  FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE SET NULL
-);
+# 4. 启动应用
+npm run dev
 ```
 
 ## 📁 项目结构
 
 ```
 webssh/
-├── backend/                 # Node.js后端服务
-│   ├── config/
-│   │   └── database.js      # 数据库配置和初始化
-│   ├── routes/              # API路由
-│   │   ├── auth.js          # 认证相关路由
-│   │   └── servers.js       # 服务器管理路由
-│   ├── socket/              # WebSocket处理
-│   │   └── socketHandler.js # SSH连接处理
-│   ├── utils/
-│   │   └── encryption.js    # 加密工具类
-│   ├── .env                 # 环境变量配置
-│   ├── package.json         # 后端依赖配置
-│   └── server.js            # 主服务器入口
-├── frontend/                # Vue3前端应用
-│   ├── src/
-│   │   ├── components/      # 可复用组件
-│   │   │   └── ServerForm.vue # 服务器表单组件
-│   │   ├── router/          # 路由配置
-│   │   │   └── index.js     # 路由定义和守卫
-│   │   ├── stores/          # 状态管理
-│   │   │   ├── auth.js      # 用户认证状态
-│   │   │   ├── servers.js   # 服务器管理状态
-│   │   │   └── terminal.js  # 终端连接状态
-│   │   ├── views/           # 页面组件
-│   │   │   ├── Dashboard.vue # 主仪表板
-│   │   │   ├── Login.vue    # 登录页面
-│   │   │   ├── Register.vue # 注册页面
-│   │   │   └── Terminal.vue # 终端页面
-│   │   ├── App.vue          # 根组件
-│   │   └── main.js          # 应用入口
-│   ├── index.html           # HTML模板
-│   ├── package.json         # 前端依赖配置
-│   └── vite.config.js       # Vite构建配置
-├── package.json             # 根项目配置
-└── README.md               # 项目说明文档
+├── backend/          # Node.js后端服务
+├── frontend/         # Vue3前端应用
+├── deploy.sh         # Docker部署脚本
+├── docker-compose.yml # 容器编排配置
+├── Dockerfile        # 容器构建配置
+└── install.sql       # 数据库初始化脚本
 ```
+
+## 🔧 技术栈
+
+**前端**: Vue 3 + Vite + Element Plus + xterm.js  
+**后端**: Node.js + Express + Socket.IO + MySQL  
+**部署**: Docker + Docker Compose
+
+---
+
+*详细文档请查看 [docs/](docs/) 目录*
+*数据库设计请查看 [install.sql](install.sql)*
 
 ## 🚀 快速开始
 
 ### 环境要求
 - Node.js 16+
 - MySQL 5.7+
+- Docker 20.10+ (使用Docker部署)
+
+### 📦 Docker 快速部署（推荐）
+
+```bash
+# 一键部署（包含Docker环境检查、镜像构建、服务启动）
+./deploy.sh
+
+# 部署完成后访问：http://localhost:3000
+```
+
+**Docker部署特点：**
+- 自动构建多阶段Docker镜像
+- 包含MySQL数据库服务
+- 自动生成安全的加密密钥
+- 健康检查和服务监控
+- 生产环境配置
 
 ### 1. 克隆项目
 ```bash
