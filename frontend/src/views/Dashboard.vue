@@ -7,6 +7,17 @@
           <h1 class="logo">WebSSH</h1>
         </div>
         <div class="header-right">
+          <!-- 管理员功能入口 -->
+          <el-button 
+            v-if="authStore.user?.is_admin" 
+            type="warning" 
+            @click="$router.push('/user-management')"
+            style="margin-right: 10px"
+          >
+            <el-icon><UserFilled /></el-icon>
+            用户管理
+          </el-button>
+          
           <el-dropdown @command="handleUserCommand">
             <span class="user-info">
               <el-icon><User /></el-icon>
@@ -15,7 +26,12 @@
             </span>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="logout">
+                <!-- 管理员菜单项 -->
+                <el-dropdown-item v-if="authStore.user?.is_admin" command="userManagement">
+                  <el-icon><UserFilled /></el-icon>
+                  用户管理
+                </el-dropdown-item>
+                <el-dropdown-item divided command="logout">
                   <el-icon><SwitchButton /></el-icon>
                   注销登录
                 </el-dropdown-item>
@@ -152,7 +168,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Folder, Monitor, Connection, Lock, More, Edit, Delete, User, SwitchButton } from '@element-plus/icons-vue'
+import { Plus, Folder, Monitor, Connection, Lock, More, Edit, Delete, User, SwitchButton, UserFilled } from '@element-plus/icons-vue'
 import { useServersStore } from '@/stores/servers'
 import { useAuthStore } from '@/stores/auth'
 import ServerForm from '@/components/ServerForm.vue'
@@ -259,7 +275,9 @@ const handleDeleteServer = async (serverId, serverName) => {
 
 // 处理用户操作
 const handleUserCommand = async (command) => {
-  if (command === 'logout') {
+  if (command === 'userManagement') {
+    router.push('/user-management')
+  } else if (command === 'logout') {
     try {
       await ElMessageBox.confirm(
         '确定要注销登录吗？',

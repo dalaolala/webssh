@@ -9,6 +9,8 @@ const path = require('path');
 const authRoutes = require('./routes/auth');
 const serverRoutes = require('./routes/servers');
 const sftpRoutes = require('./routes/sftp');
+const userRoutes = require('./routes/users');
+const adminRoutes = require('./routes/admin');
 
 // Database
 const db = require('./config/database');
@@ -37,14 +39,20 @@ app.use(express.static(path.join(__dirname, '../frontend/dist')));
 app.use('/api/auth', authRoutes);
 app.use('/api/servers', serverRoutes);
 app.use('/api/sftp', sftpRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Socket.io connection handling
 socketHandler(io);
 
 // Serve frontend for production
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
-});
+if (process.env.NODE_ENV === 'production') {
+  app.use(express.static(path.join(__dirname, '../frontend/dist')));
+  
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
+  });
+}
 
 // Database connection test
 db.authenticate()

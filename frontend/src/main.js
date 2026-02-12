@@ -38,8 +38,14 @@ for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
   app.component(key, component)
 }
 
-app.use(createPinia())
+const pinia = createPinia()
+app.use(pinia)
 app.use(router)
 app.use(ElementPlus)
 
-app.mount('#app')
+// 初始化认证状态
+import { useAuthStore } from '@/stores/auth'
+const authStore = useAuthStore()
+authStore.initializeAuth().then(() => {
+  app.mount('#app')
+})

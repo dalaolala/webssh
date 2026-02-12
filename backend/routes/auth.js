@@ -82,15 +82,30 @@ router.post('/login', async (req, res) => {
 
     const user = users[0];
 
+    // 检查用户是否激活
+    if (user.is_active !== 1) {
+      return res.status(403).json({ error: '账户已被禁用，请联系管理员' });
+    }
+
     // 验证密码
     const isValidPassword = await bcrypt.compare(password, user.password_hash);
     if (!isValidPassword) {
       return res.status(401).json({ error: '邮箱或密码错误' });
     }
 
-    // 生成JWT令牌
+    // 更新最后登录时间
+    await db.pool.execute(
+      'UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?',
+      [user.id]
+    );
+
+    // 生成JWT令牌（包含管理员信息）
     const token = jwt.sign(
-      { userId: user.id, email: user.email },
+      { 
+        userId: user.id, 
+        email: user.email,
+        isAdmin: user.is_admin === 1 
+      },
       process.env.JWT_SECRET || 'webssh-secret-key',
       { expiresIn: '7d' }
     );
@@ -101,7 +116,8 @@ router.post('/login', async (req, res) => {
       user: {
         id: user.id,
         email: user.email,
-        phone: user.phone
+        phone: user.phone,
+        is_admin: user.is_admin === 1
       }
     });
   } catch (error) {
@@ -132,7 +148,7 @@ const authenticateToken = (req, res, next) => {
 router.get('/me', authenticateToken, async (req, res) => {
   try {
     const [users] = await db.pool.execute(
-      'SELECT id, email, phone, created_at FROM users WHERE id = ?',
+      'SELECT id, email, phone, is_admin, is_active, last_login, created_at FROM users WHERE id = ?',
       [req.user.userId]
     );
 
@@ -140,7 +156,18 @@ router.get('/me', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: '用户不存在' });
     }
 
-    res.json({ user: users[0] });
+    const user = users[0];
+    res.json({ 
+      user: {
+        id: user.id,
+        email: user.email,
+        phone: user.phone,
+        is_admin: user.is_admin === 1,
+        is_active: user.is_active === 1,
+        last_login: user.last_login,
+        created_at: user.created_at
+      }
+    });
   } catch (error) {
     console.error('获取用户信息错误:', error);
     res.status(500).json({ error: '服务器内部错误' });

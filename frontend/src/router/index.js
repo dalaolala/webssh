@@ -43,6 +43,12 @@ const routes = [
     name: 'GroupManagement',
     component: () => import('@/views/GroupManagement.vue'),
     meta: { requiresAuth: true }
+  },
+  {
+    path: '/user-management',
+    name: 'UserManagement',
+    component: () => import('@/views/UserManagement.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true }
   }
 ]
 
@@ -59,6 +65,9 @@ router.beforeEach((to, from, next) => {
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
     next('/login')
   } else if (to.meta.requiresGuest && authStore.isAuthenticated) {
+    next('/')
+  } else if (to.meta.requiresAdmin && (!authStore.isAuthenticated || !authStore.user?.is_admin)) {
+    // 检查管理员权限
     next('/')
   } else {
     next()
