@@ -13,6 +13,33 @@
 
 ### 📦 Docker 一键部署（推荐）
 
+#### 方式一：使用官方镜像（推荐用于生产环境）
+
+```bash
+docker run -d \
+  --name webssh-app \
+  -p 3000:3000 \
+  -e DB_HOST=your-mysql-host \
+  -e DB_PORT=3306 \
+  -e DB_USER=webssh_user \
+  -e DB_PASSWORD=your-db-password \
+  -e DB_NAME=webssh \
+  -e JWT_SECRET=your-jwt-secret \
+  -e ENCRYPTION_KEY=your-32-byte-encryption-key \
+  dalaolala/webssh:latest
+```
+
+**密钥生成方法：**
+```bash
+# 生成32字节JWT密钥（推荐使用强随机字符串）
+openssl rand -base64 32
+
+# 生成32字节加密密钥（必须正好32个字符）
+openssl rand -hex 16  # 输出32字符的十六进制字符串
+```
+
+#### 方式二：完整部署脚本（包含MySQL）
+
 ```bash
 # 一键部署（包含Docker环境检查、镜像构建、服务启动）
 git clone https://github.com/dalaolala/webssh.git
