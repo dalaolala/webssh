@@ -15,6 +15,9 @@
 
 ```bash
 # 一键部署（包含Docker环境检查、镜像构建、服务启动）
+git clone https://github.com/dalaolala/webssh.git
+cd webssh
+chmod +x deploy.sh
 ./deploy.sh
 
 # 部署完成后访问：http://localhost:3000
@@ -22,27 +25,46 @@
 
 **部署特点：**
 - 自动构建多阶段Docker镜像
-- 包含MySQL数据库服务
-- 自动生成安全的加密密钥
+- 包含MySQL数据库服务，使用 `install.sql` 进行数据库初始化
+- 自动生成安全的加密密钥（JWT_SECRET和ENCRYPTION_KEY）
 - 健康检查和服务监控
+- 生产环境配置
 
 ### 🛠️ 手动部署
 
 **环境要求：** Node.js 16+, MySQL 5.7+
 
 ```bash
-# 1. 安装依赖
-npm install
+# 1. 克隆项目
+git clone https://github.com/dalaolala/webssh.git
+cd webssh
 
-# 2. 数据库初始化
+# 2. 数据库初始化（使用install.sql脚本）
 mysql -u root -p < install.sql
 
-# 3. 环境配置
-cp backend/.env.example backend/.env
-# 编辑 backend/.env 文件
+# 3. 安装依赖
+npm install
 
-# 4. 启动应用
+# 4. 环境配置
+cp backend/.env.example backend/.env
+# 编辑 backend/.env 文件，配置数据库连接和密钥
+
+# 5. 启动应用
 npm run dev
+```
+
+**重要说明：**
+- 数据库初始化统一使用 `install.sql` 脚本
+- `ENCRYPTION_KEY` 必须是正好32字节的字符串
+- 生产环境请使用强密码生成器创建安全的密钥
+
+生成符合要求的密钥：
+```bash
+# 生成32字节JWT密钥
+openssl rand -base64 32
+
+# 生成32字节加密密钥（必须正好32个字符）
+openssl rand -hex 16
 ```
 
 ## 📁 项目结构
@@ -68,222 +90,34 @@ webssh/
 *详细文档请查看 [docs/](docs/) 目录*
 *数据库设计请查看 [install.sql](install.sql)*
 
-## 🚀 快速开始
+## 🔧 使用指南
 
-### 环境要求
-- Node.js 16+
-- MySQL 5.7+
-- Docker 20.10+ (使用Docker部署)
+### 首次使用
+1. 访问 http://localhost:3000 注册账号
+2. 登录后进入仪表板
+3. 添加你的第一个SSH服务器
+4. 点击服务器名称开始连接
 
-### 📦 Docker 快速部署（推荐）
+### 服务器配置
+- **名称**: 服务器显示名称
+- **主机**: IP地址或域名
+- **端口**: SSH端口（默认22）
+- **用户名**: SSH登录用户名
+- **认证方式**: 密码认证或私钥认证
+- **分组**: 服务器分组（可选）
 
-```bash
-# 一键部署（包含Docker环境检查、镜像构建、服务启动）
-./deploy.sh
+### 终端操作
+- **连接**: 点击"连接"按钮建立SSH会话
+- **命令输入**: 在底部输入框输入命令
+- **快捷键**: 
+  - `Ctrl+C`: 中断当前命令
+  - `Ctrl+D`: 退出会话
+  - `Ctrl+L`: 清屏
+- **断开**: 点击"断开"按钮结束连接
 
-# 部署完成后访问：http://localhost:3000
-```
-
-**Docker部署特点：**
-- 自动构建多阶段Docker镜像
-- 包含MySQL数据库服务
-- 自动生成安全的加密密钥
-- 健康检查和服务监控
-- 生产环境配置
-
-### 1. 克隆项目
-```bash
-git clone <项目地址>
-cd webssh
-```
-
-### 2. 数据库设置
-
-#### 方式一：使用安装脚本（推荐）
-```bash
-# 使用安装脚本自动创建数据库和表结构
-mysql -u root -p < install.sql
-```
-
-#### 方式二：手动创建数据库
-```sql
--- 创建数据库
-CREATE DATABASE webssh CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-
--- 创建用户（可选）
-CREATE USER 'webssh'@'localhost' IDENTIFIED BY 'webssh';
-GRANT ALL PRIVILEGES ON webssh.* TO 'webssh'@'localhost';
-FLUSH PRIVILEGES;
-```
-
-### 建表SQL（MySQL）
-```sql
--- 用户表
-CREATE TABLE IF NOT EXISTS users (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  email VARCHAR(255) UNIQUE NOT NULL,
-  phone VARCHAR(20),
-  password_hash VARCHAR(255) NOT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- 分组表
-CREATE TABLE IF NOT EXISTS groups (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  user_id INT NOT NULL,
-  name VARCHAR(255) NOT NULL,
-  description TEXT,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  CONSTRAINT fk_groups_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-  UNIQUE KEY unique_user_group (user_id, name)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- 服务器表
-CREATE TABLE IF NOT EXISTS servers (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  user_id INT NOT NULL,
-  name VARCHAR(255) NOT NULL,
-  host VARCHAR(255) NOT NULL,
-  port INT DEFAULT 22,
-  username VARCHAR(255) NOT NULL,
-  password_encrypted TEXT,
-  private_key_encrypted TEXT,
-  auth_type ENUM('password', 'key') DEFAULT 'password',
-  group_id INT,
-  group_name VARCHAR(255) DEFAULT 'Default',
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  CONSTRAINT fk_servers_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-  CONSTRAINT fk_servers_group FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- 连接日志表
-CREATE TABLE IF NOT EXISTS connection_logs (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  user_id INT NOT NULL,
-  server_id INT,
-  host VARCHAR(255) NOT NULL,
-  start_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  end_time TIMESTAMP NULL,
-  duration INT DEFAULT 0,
-  CONSTRAINT fk_logs_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-  CONSTRAINT fk_logs_server FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-```
-
-#### 方式三：系统初始化
-```sql
--- 如果需要重新初始化系统，使用初始化脚本
-mysql -u root -p < init.sql
-```
-
-**重要说明**：
-- 第一次安装推荐使用 `install.sql` 脚本
-- 如果系统已运行，使用 `init.sql` 会保留现有数据
-- 安装脚本会自动处理数据迁移和分组关联
-
-### 3. 安装依赖
-```bash
-# 安装后端依赖
-cd backend
-npm install
-
-# 安装前端依赖  
-cd ../frontend
-npm install
-
-# 返回根目录安装开发依赖
-cd ..
-npm install
-```
-
-### 4. 环境配置
-```bash
-# 复制环境配置文件
-cp backend/.env.example backend/.env
-```
-
-编辑 `backend/.env` 文件：
-```env
-# Database Configuration
-DB_HOST=localhost
-DB_PORT=3306
-DB_USER=webssh
-DB_PASSWORD=webssh
-DB_NAME=webssh
-
-# JWT Secret (生成随机密钥)
-JWT_SECRET=your_jwt_secret_key_here
-
-# Server Configuration
-PORT=3000
-NODE_ENV=development
-
-# Encryption Key (必须32字节长)
-ENCRYPTION_KEY=abcdefghijklmnopqrstuvwxyz123456
-```
-
-**重要提示**：
-- `ENCRYPTION_KEY` 必须是正好32字节的字符串
-- 生产环境请使用强密码生成器创建安全的密钥
-- 不要将真实的密钥提交到版本控制系统
-
-生成一个符合要求的密钥：
-```bash
-openssl rand -hex 16  # 输出32字符长度的十六进制字符串
-```
-
-### 4.5 数据库初始化验证
-
-数据库初始化完成后，后端服务会自动创建必要的表结构。如果遇到表结构错误，可以手动执行：
-
-```bash
-# 检查数据库表结构
-mysql -u root -p -D webssh -e "SHOW TABLES;"
-
-# 验证表结构
-mysql -u root -p -D webssh -e "DESCRIBE servers; DESCRIBE \`groups\`;"
-
-# 如果表结构不完整，执行更新脚本
-mysql -u root -p < update_tables.sql
-```
-
-**常见问题解决**：
-- 如果遇到 `Unknown column 'group_id'` 错误，运行 `update_tables.sql`
-- 如果遇到 `groups` 表语法错误，确保表名使用反引号
-- 如果分组数据不显示，运行 `generate_groups_data.sql`
-
-### 5. 启动应用
-
-#### 开发模式（推荐）
-```bash
-# 同时启动前后端（需要concurrently）
-npm run dev
-```
-
-#### 分别启动
-```bash
-# 启动后端服务（端口3000）
-npm run dev:backend
-
-# 启动前端服务（端口5173）  
-npm run dev:frontend
-```
-
-#### 生产构建
-```bash
-# 构建前端
-npm run build
-
-# 启动生产服务器
-npm start
-```
-
-### 6. 访问应用
-- 前端地址：http://localhost:5173
-- 后端API：http://localhost:3000
+### 快速连接
+- 不保存服务器信息，直接输入连接参数
+- 适合临时连接或测试使用
 
 ## 🔧 使用指南
 
@@ -316,64 +150,27 @@ npm start
 
 ## 🔒 安全特性
 
-### 数据加密
-- **用户密码**: bcrypt加密存储
-- **服务器认证信息**: AES-256-GCM加密
-- **传输加密**: WebSocket over HTTPS（生产环境）
-
-### 认证授权
-- JWT令牌认证
-- 路由权限控制
-- 用户数据隔离
-
-### 输入验证
-- 前后端双重验证
-- SQL注入防护
-- XSS攻击防护
+- **数据加密**: 用户密码使用bcrypt加密，服务器认证信息使用AES-256-GCM加密
+- **认证授权**: JWT令牌认证，路由权限控制，用户数据隔离
+- **输入验证**: 前后端双重验证，SQL注入防护，XSS攻击防护
+- **传输安全**: WebSocket over HTTPS（生产环境）
 
 ## 🐛 故障排除
 
 ### 常见问题
 
-#### 1. 数据库连接失败
-```bash
-# 检查MySQL服务状态
-sudo systemctl status mysql
+- **数据库连接失败**: 检查MySQL服务状态和用户权限
+- **加密密钥错误**: 确保ENCRYPTION_KEY为32字节
+- **端口冲突**: 检查3000和5173端口是否被占用
+- **依赖安装失败**: 清除npm缓存后重新安装
 
-# 检查数据库用户权限
-mysql -u webssh -p webssh
-```
-
-#### 2. 加密密钥错误
-```bash
-# 确保ENCRYPTION_KEY为32字节
-node -e "console.log(process.env.ENCRYPTION_KEY.length)"
-```
-
-#### 3. 端口冲突
-```bash
-# 检查端口占用
-netstat -tulpn | grep :3000
-netstat -tulpn | grep :5173
-```
-
-#### 4. 依赖安装失败
-```bash
-# 清除缓存重新安装
-npm cache clean --force
-rm -rf node_modules package-lock.json
-npm install
-```
-
-### 日志查看
+**日志查看：**
 ```bash
 # 后端日志
-cd backend
-npm run dev
+cd backend && npm run dev
 
 # 前端日志  
-cd frontend
-npm run dev
+cd frontend && npm run dev
 ```
 
 ## 🤝 贡献指南
@@ -394,12 +191,6 @@ npm run dev
 - [ssh2](https://github.com/mscdex/ssh2) - Node.js SSH客户端库
 - [Vue.js](https://vuejs.org/) - 渐进式JavaScript框架
 - [Element Plus](https://element-plus.org/) - Vue3组件库
-
-## 📞 联系我们
-
-如有问题或建议，请通过以下方式联系：
-- 提交 Issue
-- 发送邮件
 
 ---
 
