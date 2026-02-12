@@ -29,7 +29,9 @@ docker run -d \
   dalaolala/webssh:latest
 ```
 
-**密钥生成方法：**
+*导入初始化数据请查看 [install.sql](install.sql)*
+
+**最后两个参数相关密钥生成方法：**
 ```bash
 # 生成32字节JWT密钥（推荐使用强随机字符串）
 openssl rand -base64 32
