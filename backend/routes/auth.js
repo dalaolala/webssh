@@ -29,30 +29,42 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: '该邮箱已被注册' });
     }
 
+    // 检查是否为第一个用户（设置管理员权限）
+    const [allUsers] = await db.pool.execute('SELECT COUNT(*) as userCount FROM users');
+    const isFirstUser = allUsers[0].userCount === 0;
+    const isAdmin = isFirstUser ? 1 : 0;
+
     // 加密密码
     const saltRounds = 12;
     const passwordHash = await bcrypt.hash(password, saltRounds);
 
     // 创建用户
     const [result] = await db.pool.execute(
-      'INSERT INTO users (email, phone, password_hash) VALUES (?, ?, ?)',
-      [email, phone || null, passwordHash]
+      'INSERT INTO users (email, phone, password_hash, is_admin) VALUES (?, ?, ?, ?)',
+      [email, phone || null, passwordHash, isAdmin]
     );
 
-    // 生成JWT令牌
+    // 生成JWT令牌（如果是管理员，包含管理员信息）
+    const tokenPayload = {
+      userId: result.insertId, 
+      email,
+      isAdmin: isAdmin === 1
+    };
+    
     const token = jwt.sign(
-      { userId: result.insertId, email },
+      tokenPayload,
       process.env.JWT_SECRET || 'webssh-secret-key',
       { expiresIn: '7d' }
     );
 
     res.status(201).json({
-      message: '注册成功',
+      message: isFirstUser ? '注册成功，您已成为系统管理员' : '注册成功',
       token,
       user: {
         id: result.insertId,
         email,
-        phone
+        phone,
+        is_admin: isAdmin === 1
       }
     });
   } catch (error) {
