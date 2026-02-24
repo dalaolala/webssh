@@ -230,6 +230,7 @@ let fitAddon = null
 let initialScrollTop = 0
 let wheelHandler = null
 let viewportWheelHandler = null
+let isComposing = false // 标记 IME 输入法是否正在组合输入中
 
 // 初始化终端
 const initTerminal = () => {
@@ -283,27 +284,70 @@ const initTerminal = () => {
       // 聚焦终端
       term.focus()
       
-      // 隐藏辅助文本输入框的视觉干扰
-      const hideHelperTextarea = () => {
+      // ================================================================
+      // 修复中文输入法（IME）渲染到终端顶部的 Bug
+      // ----------------------------------------------------------------
+      // 根本原因：xterm.js 内部 compositionHelper 监听了 helper textarea
+      // 的 compositionupdate 事件，在 IME 选字过程中会直接向 xterm 的内部
+      // buffer 写入候选字并渲染到 canvas 第0行（终端顶部）。
+      //
+      // 解决方案：
+      // 1. 在「捕获阶段」（useCapture=true）监听 compositionupdate/
+      //    compositionstart，调用 stopImmediatePropagation() 阻止 xterm
+      //    内部监听器收到事件 → 候选字不会被写入 canvas。
+      // 2. compositionend 时从 e.data 取出最终文字直接发给服务器，
+      //    并清空 textarea，防止 xterm 的 onData 再次重复发送。
+      // ================================================================
+      const setupHelperTextarea = () => {
         const textarea = terminalRef.value?.querySelector('.xterm-helper-textarea')
-        if (textarea) {
-          textarea.style.width = '0'
-          textarea.style.height = '0'
+        if (textarea && !textarea._imeFixed) {
+          textarea._imeFixed = true // 防止重复绑定
+
+          // 保留 textarea 在终端容器内（确保 IME 候选框能在屏幕上弹出）
+          // 仅隐藏其视觉显示
           textarea.style.opacity = '0'
+          textarea.style.color = 'transparent'
           textarea.style.position = 'absolute'
-          textarea.style.left = '-9999px'
-          textarea.style.zIndex = '-1'
+          textarea.style.bottom = '4px'
+          textarea.style.left = '4px'
+          textarea.style.width = '1px'
+          textarea.style.height = '1px'
+          textarea.style.zIndex = '1'
+          textarea.style.caretColor = 'transparent'
+
+          // 【核心修复】捕获阶段拦截 compositionstart，阻止 xterm 内部处理
+          textarea.addEventListener('compositionstart', (e) => {
+            isComposing = true
+            e.stopImmediatePropagation() // 阻止 xterm 内部 compositionHelper 收到此事件
+          }, true)
+
+          // 【核心修复】捕获阶段拦截 compositionupdate，阻止 xterm 将候选字写入 canvas
+          textarea.addEventListener('compositionupdate', (e) => {
+            e.stopImmediatePropagation() // 阻止 xterm 内部 compositionHelper 渲染候选字
+          }, true)
+
+          // compositionend：取最终确认文字发给服务器，清空 textarea
+          textarea.addEventListener('compositionend', (e) => {
+            e.stopImmediatePropagation()
+            isComposing = false
+            const text = e.data
+            if (text && terminalStore.isConnected) {
+              terminalStore.sendInput(text)
+            }
+            // 清空 textarea 防止 xterm onData 再次重复发送
+            Promise.resolve().then(() => { textarea.value = '' })
+          }, true)
         }
       }
       
-      // 初始隐藏
-      hideHelperTextarea()
+      // 初始设置
+      setupHelperTextarea()
       
-      // 监听DOM变化，确保新创建的辅助输入框也被隐藏
+      // 监听DOM变化，确保 helper textarea 创建后及时处理
       const observer = new MutationObserver((mutations) => {
         mutations.forEach((mutation) => {
           if (mutation.type === 'childList') {
-            hideHelperTextarea()
+            setupHelperTextarea()
           }
         })
       })
@@ -311,11 +355,14 @@ const initTerminal = () => {
       observer.observe(terminalRef.value, { childList: true, subtree: true })
       
       // 处理终端输入 - 直接发送到服务器
+      // IME 组合期间（isComposing === true）忽略 onData，最终文字由 compositionend 处理
       term.onData((data) => {
+        if (isComposing) {
+          return // IME 组合进行中，跳过，避免发送候选字
+        }
         if (terminalStore.isConnected) {
           terminalStore.sendInput(data)
         } else {
-          // 如果未连接，显示提示
           term.write('\r\n\x1b[31m未连接到服务器，请先连接\x1b[0m\r\n')
         }
       })
@@ -743,11 +790,14 @@ onUnmounted(() => {
 <style scoped>
 .terminal-page {
   height: 100vh;
+  overflow: hidden;
   background-color: #1e1e1e;
 }
 
 .terminal-container {
   height: 100%;
+  display: flex;
+  flex-direction: column;
   background-color: #1e1e1e;
 }
 
@@ -784,10 +834,12 @@ onUnmounted(() => {
 }
 
 .main-content {
-  height: calc(100vh - 120px);
+  flex: 1;
+  min-height: 0; /* 关键：允许 flex 子项缩小到内容以下 */
   display: flex;
   flex-direction: row;
   align-items: stretch;
+  overflow: hidden;
 }
 
 .sftp-sidebar {
@@ -928,6 +980,7 @@ onUnmounted(() => {
 }
 
 .terminal-footer {
+  flex-shrink: 0; /* 确保 footer 占据固定高度，不压缩也不覆盖终端 */
   background-color: #2d2d30;
   border-top: 1px solid #3e3e42;
   height: 40px;
@@ -969,22 +1022,16 @@ onUnmounted(() => {
   background-color: #1e1e1e !important;
 }
 
-/* 修复XTerm.js辅助文本输入框的重叠问题 */
+/* xterm-helper-textarea: 仅隐藏视觉，保留事件监听能力（IME 修复需要） */
 :deep(.xterm-helper-textarea) {
-  position: absolute !important;
-  left: 0 !important;
-  top: 0 !important;
-  width: 0 !important;
-  height: 0 !important;
   opacity: 0 !important;
-  overflow: hidden !important;
+  color: transparent !important;
+  caret-color: transparent !important;
   resize: none !important;
   outline: none !important;
   border: none !important;
   padding: 0 !important;
   margin: 0 !important;
-  z-index: -1 !important;
-  pointer-events: none !important;
 }
 
 /* 复制按钮高亮效果 */
