@@ -158,6 +158,47 @@ webssh/
 - 适合临时连接或测试使用
 
 
+## 🌐 Nginx 反向代理配置
+
+如需通过 Nginx 将域名/端口转发到 WebSSH（默认运行在 `3000` 端口），参考以下配置：
+
+```nginx
+server {
+    listen 80;
+    server_name your-domain.com;  # 替换为你的域名或 IP
+
+    location / {
+        # 核心指令：将请求转发到目标地址
+        proxy_pass http://127.0.0.1:3000;
+
+        # --- 以下是标准请求头设置 (推荐保留) ---
+
+        # 将客户端真实的 Host 传递给后端
+        proxy_set_header Host $host;
+
+        # 传递客户端的真实 IP
+        proxy_set_header X-Real-IP $remote_addr;
+
+        # 记录代理链上的 IP
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+        # 告诉后端原本的请求协议是 http 还是 https
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # --- WebSocket 支持（Socket.IO 必须） ---
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 86400;  # 长连接超时（秒），SSH 会话期间不断开
+    }
+}
+```
+
+> **注意**：本项目使用 Socket.IO 建立 WebSocket 长连接来传输 SSH 数据，  
+> 必须保留 `Upgrade` 和 `Connection` 头，否则终端连接会失败。
+
+---
+
 ## 🐛 故障排除
 
 ### 常见问题
