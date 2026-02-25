@@ -726,6 +726,8 @@ watch(() => terminalStore.isConnected, (isConnected, wasConnected) => {
       sftpStore.disconnectSftp()
       showSftp.value = false
     }
+    // 无论连接还是断开，重新计算终端尺寸以适应底部内边距
+    setTimeout(() => { handleResize() }, 150)
   }
 })
 
@@ -896,12 +898,14 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
   padding: 0;
+  padding-bottom: 8px; /* 底部留出缓冲，避免最后一行命令行贴边被遥盖 */
   cursor: text;
-  overflow: hidden; /* 终端容器本身不需要滚动 */
+  overflow: hidden;
   position: relative;
   min-height: 400px;
   display: flex;
   flex-direction: column;
+  box-sizing: border-box;
 }
 
 .terminal:hover {
