@@ -1,0 +1,38 @@
+# 外挂数据库部署模板
+# 使用方式：
+#   1. 复制本文件并填写数据库连接信息
+#   2. 初始化数据库：mysql -u root -p < install.sql
+#   3. 启动：docker-compose -f docker-compose.external-db.yml up -d
+
+version: '3.8'
+
+services:
+  webssh:
+    image: dalaolala/webssh:latest
+    container_name: webssh-app
+    ports:
+      - "3000:3000"
+    environment:
+      # 数据库配置（填写你的外部 MySQL 信息）
+      - DB_HOST=your-mysql-host
+      - DB_PORT=3306
+      - DB_USER=webssh_user
+      - DB_PASSWORD=your-db-password
+      - DB_NAME=webssh
+
+      # 安全配置（请替换为强随机值，部署后不可更改）
+      - JWT_SECRET=your-jwt-secret
+      - ENCRYPTION_KEY=your-32-byte-encryption-key
+
+      # 运行环境
+      - NODE_ENV=production
+      - PORT=3000
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/auth/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
