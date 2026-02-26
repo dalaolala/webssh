@@ -23,9 +23,9 @@ export const useServersStore = defineStore('servers', () => {
       await fetchGroups()
       return { success: true }
     } catch (error) {
-      return { 
-        success: false, 
-        error: error.response?.data?.error || '获取服务器列表失败' 
+      return {
+        success: false,
+        error: error.response?.data?.error || '获取服务器列表失败'
       }
     } finally {
       loading.value = false
@@ -54,13 +54,13 @@ export const useServersStore = defineStore('servers', () => {
           'Authorization': `Bearer ${authStore.token}`
         }
       })
-      
+
       await fetchServers()
       return { success: true, data: response.data }
     } catch (error) {
-      return { 
-        success: false, 
-        error: error.response?.data?.error || '添加服务器失败' 
+      return {
+        success: false,
+        error: error.response?.data?.error || '添加服务器失败'
       }
     }
   }
@@ -73,13 +73,13 @@ export const useServersStore = defineStore('servers', () => {
           'Authorization': `Bearer ${authStore.token}`
         }
       })
-      
+
       await fetchServers()
       return { success: true }
     } catch (error) {
-      return { 
-        success: false, 
-        error: error.response?.data?.error || '更新服务器失败' 
+      return {
+        success: false,
+        error: error.response?.data?.error || '更新服务器失败'
       }
     }
   }
@@ -92,13 +92,30 @@ export const useServersStore = defineStore('servers', () => {
           'Authorization': `Bearer ${authStore.token}`
         }
       })
-      
+
       await fetchServers()
       return { success: true }
     } catch (error) {
-      return { 
-        success: false, 
-        error: error.response?.data?.error || '删除服务器失败' 
+      return {
+        success: false,
+        error: error.response?.data?.error || '删除服务器失败'
+      }
+    }
+  }
+
+  // 获取服务器基本信息（不含密钥，用于终端连接时的界面显示）
+  const getServerInfo = async (serverId) => {
+    try {
+      const response = await axios.get(`/api/servers/${serverId}`, {
+        headers: {
+          'Authorization': `Bearer ${authStore.token}`
+        }
+      })
+      return { success: true, data: response.data }
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.error || '获取服务器信息失败'
       }
     }
   }
@@ -113,9 +130,9 @@ export const useServersStore = defineStore('servers', () => {
       })
       return { success: true, data: response.data }
     } catch (error) {
-      return { 
-        success: false, 
-        error: error.response?.data?.error || '获取认证信息失败' 
+      return {
+        success: false,
+        error: error.response?.data?.error || '获取认证信息失败'
       }
     }
   }
@@ -130,9 +147,9 @@ export const useServersStore = defineStore('servers', () => {
       })
       return { success: true, data: response.data }
     } catch (error) {
-      return { 
-        success: false, 
-        error: error.response?.data?.error || '连接测试失败' 
+      return {
+        success: false,
+        error: error.response?.data?.error || '连接测试失败'
       }
     }
   }
@@ -150,13 +167,13 @@ export const useServersStore = defineStore('servers', () => {
           'Authorization': `Bearer ${authStore.token}`
         }
       })
-      
+
       await fetchGroups()
       return { success: true, data: response.data }
     } catch (error) {
-      return { 
-        success: false, 
-        error: error.response?.data?.error || '添加分组失败' 
+      return {
+        success: false,
+        error: error.response?.data?.error || '添加分组失败'
       }
     }
   }
@@ -169,13 +186,13 @@ export const useServersStore = defineStore('servers', () => {
           'Authorization': `Bearer ${authStore.token}`
         }
       })
-      
+
       await fetchGroups()
       return { success: true }
     } catch (error) {
-      return { 
-        success: false, 
-        error: error.response?.data?.error || '更新分组失败' 
+      return {
+        success: false,
+        error: error.response?.data?.error || '更新分组失败'
       }
     }
   }
@@ -188,14 +205,14 @@ export const useServersStore = defineStore('servers', () => {
           'Authorization': `Bearer ${authStore.token}`
         }
       })
-      
+
       await fetchGroups()
       await fetchServers()
       return { success: true }
     } catch (error) {
-      return { 
-        success: false, 
-        error: error.response?.data?.error || '删除分组失败' 
+      return {
+        success: false,
+        error: error.response?.data?.error || '删除分组失败'
       }
     }
   }
@@ -213,6 +230,7 @@ export const useServersStore = defineStore('servers', () => {
     addServer,
     updateServer,
     deleteServer,
+    getServerInfo,
     getServerCredentials,
     testConnection,
     getServersByGroup,

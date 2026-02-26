@@ -86,14 +86,14 @@ router.post('/', authenticateToken, async (req, res) => {
     // 处理分组信息
     let groupId = null;
     let finalGroupName = groupName || 'Default';
-    
+
     // 查找对应的分组ID
     if (groupName) {
       const [groups] = await db.pool.execute(
         'SELECT id FROM \`groups\` WHERE user_id = ? AND name = ?',
         [req.user.userId, groupName]
       );
-      
+
       if (groups.length > 0) {
         groupId = groups[0].id;
       } else {
@@ -186,13 +186,13 @@ router.put('/:id', authenticateToken, async (req, res) => {
     if (groupName) {
       // 处理分组信息
       let groupId = null;
-      
+
       // 查找对应的分组ID
       const [groups] = await db.pool.execute(
         'SELECT id FROM `groups` WHERE user_id = ? AND name = ?',
         [req.user.userId, groupName]
       );
-      
+
       if (groups.length > 0) {
         groupId = groups[0].id;
       } else {
@@ -203,7 +203,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
         );
         groupId = groupResult.insertId;
       }
-      
+
       updateFields.push('group_id = ?');
       updateValues.push(groupId);
       updateFields.push('group_name = ?');
@@ -284,7 +284,7 @@ router.get('/groups', authenticateToken, async (req, res) => {
       );
       group.serverCount = serverCount[0].count;
     }
-    
+
     res.json({ groups });
   } catch (error) {
     console.error('获取服务器分组错误:', error);
@@ -386,7 +386,7 @@ router.put('/groups/:id', authenticateToken, async (req, res) => {
       [groupId, req.user.userId]
     );
 
-    res.json({ 
+    res.json({
       message: '分组更新成功',
       group: {
         ...updatedGroup[0],
@@ -424,8 +424,8 @@ router.delete('/groups/:id', authenticateToken, async (req, res) => {
 
     // 如果分组中有服务器，不允许删除
     if (count > 0) {
-      return res.status(400).json({ 
-        error: `分组中包含 ${count} 个服务器，请先删除或移出所有服务器后再删除分组` 
+      return res.status(400).json({
+        error: `分组中包含 ${count} 个服务器，请先删除或移出所有服务器后再删除分组`
       });
     }
 
@@ -435,11 +435,33 @@ router.delete('/groups/:id', authenticateToken, async (req, res) => {
       [groupId, req.user.userId]
     );
 
-    res.json({ 
+    res.json({
       message: '分组删除成功'
     });
   } catch (error) {
     console.error('删除分组错误:', error);
+    res.status(500).json({ error: '服务器内部错误' });
+  }
+});
+
+// 获取服务器基本信息（不含密钥，用于展示）
+router.get('/:id', authenticateToken, async (req, res) => {
+  try {
+    const serverId = req.params.id;
+
+    const [servers] = await db.pool.execute(
+      `SELECT id, name, host, port, username, auth_type, group_name
+       FROM servers WHERE id = ? AND user_id = ?`,
+      [serverId, req.user.userId]
+    );
+
+    if (servers.length === 0) {
+      return res.status(404).json({ error: '服务器不存在' });
+    }
+
+    res.json({ server: servers[0] });
+  } catch (error) {
+    console.error('获取服务器信息错误:', error);
     res.status(500).json({ error: '服务器内部错误' });
   }
 });
@@ -466,12 +488,12 @@ router.get('/:id/credentials', authenticateToken, async (req, res) => {
     // 解密认证信息
     if (server.auth_type === 'password' && server.password_encrypted) {
       credentials.password = encryptionService.decryptPassword(
-        server.password_encrypted, 
+        server.password_encrypted,
         req.user.userId
       );
     } else if (server.auth_type === 'key' && server.private_key_encrypted) {
       credentials.privateKey = encryptionService.decryptPrivateKey(
-        server.private_key_encrypted, 
+        server.private_key_encrypted,
         req.user.userId
       );
     }
@@ -497,35 +519,35 @@ router.get('/:id/credentials', authenticateToken, async (req, res) => {
 // 测试服务器连接（使用当前表单数据）
 router.post('/test-connection', authenticateToken, async (req, res) => {
   try {
-    const { 
-      host, 
-      port = 22, 
-      username, 
-      password, 
-      privateKey, 
-      authType = 'password' 
+    const {
+      host,
+      port = 22,
+      username,
+      password,
+      privateKey,
+      authType = 'password'
     } = req.body;
 
     // 验证必填字段
     if (!host || !username) {
-      return res.status(400).json({ 
-        success: false, 
-        error: '主机地址和用户名是必填项' 
+      return res.status(400).json({
+        success: false,
+        error: '主机地址和用户名是必填项'
       });
     }
 
     // 验证认证信息
     if (authType === 'password' && !password) {
-      return res.status(400).json({ 
-        success: false, 
-        error: '密码认证需要提供密码' 
+      return res.status(400).json({
+        success: false,
+        error: '密码认证需要提供密码'
       });
     }
 
     if (authType === 'key' && !privateKey) {
-      return res.status(400).json({ 
-        success: false, 
-        error: '密钥认证需要提供私钥' 
+      return res.status(400).json({
+        success: false,
+        error: '密钥认证需要提供私钥'
       });
     }
 
@@ -546,13 +568,13 @@ router.post('/test-connection', authenticateToken, async (req, res) => {
 
     // 测试连接
     const conn = new Client();
-    
+
     return new Promise((resolve) => {
       const timeout = setTimeout(() => {
         conn.end();
-        res.status(408).json({ 
-          success: false, 
-          error: '连接超时' 
+        res.status(408).json({
+          success: false,
+          error: '连接超时'
         });
         resolve();
       }, 10000);
@@ -560,9 +582,9 @@ router.post('/test-connection', authenticateToken, async (req, res) => {
       conn.on('ready', () => {
         clearTimeout(timeout);
         conn.end();
-        res.json({ 
-          success: true, 
-          message: '连接测试成功' 
+        res.json({
+          success: true,
+          message: '连接测试成功'
         });
         resolve();
       });
@@ -570,9 +592,9 @@ router.post('/test-connection', authenticateToken, async (req, res) => {
       conn.on('error', (err) => {
         clearTimeout(timeout);
         console.error('SSH连接测试错误:', err);
-        res.status(500).json({ 
-          success: false, 
-          error: `连接失败: ${err.message || '未知错误'}` 
+        res.status(500).json({
+          success: false,
+          error: `连接失败: ${err.message || '未知错误'}`
         });
         resolve();
       });
@@ -582,9 +604,9 @@ router.post('/test-connection', authenticateToken, async (req, res) => {
 
   } catch (error) {
     console.error('测试连接错误:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: '服务器内部错误' 
+    res.status(500).json({
+      success: false,
+      error: '服务器内部错误'
     });
   }
 });

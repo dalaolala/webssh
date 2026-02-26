@@ -494,8 +494,8 @@ const connectToServer = async () => {
   const serverId = route.params.serverId
   
   if (serverId) {
-    // 获取服务器信息
-    const result = await serversStore.getServerCredentials(serverId)
+    // 获取服务器基本信息（不含密钥，仅用于界面显示）
+    const result = await serversStore.getServerInfo(serverId)
     if (result.success) {
       currentServer.value = result.data.server
       
