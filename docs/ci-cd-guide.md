@@ -81,5 +81,3 @@ docker-compose -f docker-compose.external-db.yml up -d
 | **构建缓存** `cache-from/to: type=gha` | 利用 GitHub Actions 缓存 Docker layer，二次构建大幅提速（npm install 层不重复执行）|
 | **多架构** `linux/amd64,linux/arm64` | 同时支持 x86 服务器和 ARM（树莓派、Apple Silicon）|
 | **Access Token** | 比密码更安全，可随时在 Docker Hub 吊销 | 
-
-test cicd
