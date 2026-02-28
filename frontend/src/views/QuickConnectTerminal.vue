@@ -5,20 +5,29 @@
       <el-container class="main-content">
         <!-- SFTP文件管理器侧边栏 -->
         <el-aside 
-          v-if="showSftp && isConnected" 
+          v-if="showSftp" 
           class="sftp-sidebar"
           :width="sftpPanelWidth + 'px'"
         >
           <div class="sftp-header">
             <h3>文件管理器</h3>
-            <el-button size="small" @click="connectSftp" :loading="sftpStore.loading">
+            <el-button 
+              size="small" 
+              @click="connectSftp" 
+              :loading="quickSftp.loading.value"
+              :disabled="!isConnected"
+            >
               <el-icon><Connection /></el-icon>
               连接SFTP
             </el-button>
           </div>
           
-          <SftpFileManager v-if="sftpStore.isConnected" />
+          <QuickSftpFileManager v-if="quickSftp.isConnected.value" :sftp="quickSftp" />
           
+          <div v-else-if="!isConnected" class="sftp-prompt">
+            <el-icon size="48" color="#909399"><Monitor /></el-icon>
+            <p>请先等待 SSH 连接成功</p>
+          </div>
           <div v-else class="sftp-prompt">
             <el-icon size="48" color="#909399"><Folder /></el-icon>
             <p>点击"连接SFTP"按钮启用文件管理</p>
@@ -115,6 +124,14 @@
             <el-icon><Monitor /></el-icon>
             {{ connectionDisplay }}
           </span>
+          <span 
+            class="status-item clickable" 
+            @click="toggleSftpPanel"
+            :class="{ active: showSftp }"
+          >
+            <el-icon><Folder /></el-icon>
+            文件管理器
+          </span>
         </div>
       </el-footer>
     </el-container>
@@ -129,9 +146,9 @@ import { FitAddon } from 'xterm-addon-fit'
 import { WebLinksAddon } from 'xterm-addon-web-links'
 import { ArrowLeft, Connection, Close, Delete, Monitor, Folder, Document, Edit, DocumentCopy, DocumentAdd, Select } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
-import { useSftpStore } from '@/stores/sftp'
+import { useQuickSftp } from '@/composables/useQuickSftp'
 import { ElMessage } from 'element-plus'
-import SftpFileManager from '@/components/SftpFileManager.vue'
+import QuickSftpFileManager from '@/components/QuickSftpFileManager.vue'
 import { io } from 'socket.io-client'
 
 const props = defineProps({
@@ -146,11 +163,11 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['close'])
-
+const router = useRouter()
 const authStore = useAuthStore()
-const sftpStore = useSftpStore()
+const quickSftp = useQuickSftp()
 
-const terminalRef = ref()
+const terminalRef = ref(null)
 const showSftp = ref(false)
 const sftpPanelWidth = ref(350)
 
@@ -167,6 +184,7 @@ let initialScrollTop = 0
 let wheelHandler = null
 let viewportWheelHandler = null
 let isComposing = false
+let pingInterval = null // Added pingInterval as per instruction diff
 
 // 本地连接状态
 const isConnected = ref(false)
@@ -416,17 +434,22 @@ const toggleSftpPanel = () => {
   }, 100)
 }
 
-// 连接SFTP
+// ------------- SFTP 相关 -------------
 const connectSftp = async () => {
-  const conn = props.connectionInfo
-  if (!conn) {
-    console.error('没有可用的连接信息')
-    return
-  }
-  
-  const success = await sftpStore.connectSftp(conn)
-  if (success) {
-    console.log('SFTP连接成功')
+  try {
+    const success = await quickSftp.connectSftp({
+      host: props.connectionInfo.host,
+      port: props.connectionInfo.port,
+      username: props.connectionInfo.username,
+      password: props.connectionInfo.password,
+      privateKey: props.connectionInfo.privateKey
+    })
+    
+    if (success) {
+      ElMessage.success('SFTP连接成功')
+    }
+  } catch (error) {
+    ElMessage.error('SFTP连接失败: ' + error.message)
   }
 }
 
@@ -594,7 +617,7 @@ const connectToServer = () => {
   socket.on('ssh-closed', () => {
     isConnected.value = false
     isConnecting.value = false
-    sftpStore.disconnectSftp()
+    quickSftp.disconnectSftp() // Changed from sftpStore.disconnectSftp()
     showSftp.value = false
     if (term) {
       term.write('\r\n\x1b[31mSSH连接已断开\x1b[0m\r\n')
@@ -654,13 +677,25 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  if (pingInterval) {
+    clearInterval(pingInterval)
+  }
+  
+  // 销毁终端
+  if (term) {
+    term.dispose()
+    term = null
+  }
+  
+  // 销毁组件内部的 Socket 连接
   if (socket) {
     socket.disconnect()
     socket = null
   }
-  sftpStore.disconnectSftp()
-  if (term) {
-    term.dispose()
+
+  // 断开独立的 SFTP
+  if (quickSftp.isConnected.value) {
+    quickSftp.disconnectSftp()
   }
   if (terminalRef.value && wheelHandler) {
     terminalRef.value.removeEventListener('wheel', wheelHandler)
@@ -896,7 +931,23 @@ onUnmounted(() => {
 .status-item {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
+  font-size: 13px;
+  color: #606266;
+}
+
+.status-item.clickable {
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.status-item.clickable:hover {
+  color: #409eff;
+}
+
+.status-item.active {
+  color: #409eff;
+  font-weight: 500;
 }
 
 .status-item .el-icon {

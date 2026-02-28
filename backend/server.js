@@ -9,6 +9,7 @@ const path = require('path');
 const authRoutes = require('./routes/auth');
 const serverRoutes = require('./routes/servers');
 const sftpRoutes = require('./routes/sftp');
+const sftpQuickRoutes = require('./routes/sftp-quick');
 const userRoutes = require('./routes/users');
 const adminRoutes = require('./routes/admin');
 
@@ -39,6 +40,7 @@ app.use(express.static(path.join(__dirname, '../frontend/dist')));
 app.use('/api/auth', authRoutes);
 app.use('/api/servers', serverRoutes);
 app.use('/api/sftp', sftpRoutes);
+app.use('/api/sftp/quick', sftpQuickRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/admin', adminRoutes);
 
@@ -48,7 +50,7 @@ socketHandler(io);
 // Serve frontend for production
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, '../frontend/dist')));
-  
+
   app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
   });

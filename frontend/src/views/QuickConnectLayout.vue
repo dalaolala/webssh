@@ -18,6 +18,7 @@
           @click="activeTabId = tab.id"
         >
           <span class="tab-dot" v-if="tab.type === 'terminal'"></span>
+          <el-icon class="tab-icon-sftp" v-if="tab.type === 'sftp'"><Folder /></el-icon>
           <span class="tab-label">{{ getTabLabel(tab) }}</span>
           <el-icon class="tab-close" @click.stop="closeTab(tab.id)" v-if="tabs.length > 1"><Close /></el-icon>
         </div>
@@ -49,6 +50,12 @@
           :connection-info="tab.connectionInfo"
           @close="closeTab(tab.id)"
         />
+        <QuickConnectSftp 
+          v-else-if="tab.type === 'sftp'" 
+          :tab-id="tab.id"
+          :connection-info="tab.connectionInfo"
+          @close="closeTab(tab.id)"
+        />
       </div>
     </div>
   </div>
@@ -57,9 +64,10 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { ArrowLeft, Plus, Close } from '@element-plus/icons-vue'
+import { ArrowLeft, Plus, Close, Folder } from '@element-plus/icons-vue'
 import QuickConnect from './QuickConnect.vue'
 import QuickConnectTerminal from './QuickConnectTerminal.vue'
+import QuickConnectSftp from './QuickConnectSftp.vue'
 
 const router = useRouter()
 
@@ -75,10 +83,11 @@ const activeTab = computed(() => tabs.value.find(t => t.id === activeTabId.value
 const getTabLabel = (tab) => {
   if (tab.type === 'form') return '快速连接'
   const conn = tab.connectionInfo
-  if (!conn) return '终端'
+  if (!conn) return '会话'
   const name = conn.name || ''
   const userHost = `${conn.username || ''}@${conn.host || ''}:${conn.port || 22}`
-  return name ? `${name} (${userHost})` : userHost
+  const displayString = name ? `${name} (${userHost})` : userHost
+  return tab.type === 'sftp' ? `[SFTP] ${displayString}` : displayString
 }
 
 const createNewTab = () => {
@@ -101,7 +110,7 @@ const closeTab = (id) => {
 const handleConnect = (tabId, connectionInfo) => {
   const tab = tabs.value.find(t => t.id === tabId)
   if (tab) {
-    tab.type = 'terminal'
+    tab.type = connectionInfo.mode || 'terminal'
     tab.connectionInfo = connectionInfo
   }
 }
@@ -184,11 +193,17 @@ const handleConnect = (tabId, connectionInfo) => {
 }
 
 .tab-dot {
-  width: 7px;
-  height: 7px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: #67c23a;
+  background-color: #52c41a;
+  box-shadow: 0 0 4px rgba(82, 196, 26, 0.4);
   flex-shrink: 0;
+}
+
+.tab-icon-sftp {
+  color: #409eff;
+  font-size: 14px;
 }
 
 .tab-label {

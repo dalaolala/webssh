@@ -153,15 +153,26 @@
                 </el-form-item>
                 
                 <el-form-item>
-                  <el-button 
-                    type="primary" 
-                    :loading="connecting" 
-                    @click="handleConnect"
-                    style="width: 100%"
-                  >
-                    <el-icon><Connection /></el-icon>
-                    连接
-                  </el-button>
+                  <el-button-group style="width: 100%; display: flex;">
+                    <el-button 
+                      type="success" 
+                      :loading="connecting" 
+                      @click="handleConnectSftp"
+                      style="flex: 1;"
+                    >
+                      <el-icon><Folder /></el-icon>
+                      连接 SFTP
+                    </el-button>
+                    <el-button 
+                      type="primary" 
+                      :loading="connecting" 
+                      @click="handleConnect"
+                      style="flex: 1;"
+                    >
+                      <el-icon><Connection /></el-icon>
+                      连接 SSH
+                    </el-button>
+                  </el-button-group>
                 </el-form-item>
               </el-form>
               
@@ -474,6 +485,14 @@ const handleImportFile = (event) => {
 // ========== 连接逻辑 ==========
 
 const handleConnect = async () => {
+  await submitConnection('terminal')
+}
+
+const handleConnectSftp = async () => {
+  await submitConnection('sftp')
+}
+
+const submitConnection = async (mode) => {
   if (!connectForm.value) return
   
   try {
@@ -494,7 +513,8 @@ const handleConnect = async () => {
       name: form.name || '',
       host: form.host,
       port: form.port,
-      username: form.username
+      username: form.username,
+      mode: mode // Add mode to connectionInfo
     }
     
     if (form.authType === 'password') {
@@ -504,11 +524,11 @@ const handleConnect = async () => {
     }
     
     emit('connect', connectionInfo)
-    connecting.value = false
     
   } catch (error) {
-    connecting.value = false
     ElMessage.error('连接准备失败，请重试')
+  } finally {
+    connecting.value = false
   }
 }
 
