@@ -39,6 +39,12 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
+    path: '/quick-connect-terminal',
+    name: 'QuickConnectTerminal',
+    component: () => import('@/views/QuickConnectTerminal.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
     path: '/terminal-new',
     name: 'TerminalNew',
     component: () => import('@/views/TerminalNew.vue'),
@@ -66,7 +72,7 @@ const router = createRouter({
 // 路由守卫
 router.beforeEach((to, from, next) => {
   const authStore = useAuthStore()
-  
+
   // 检查是否需要认证
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
     next('/login')

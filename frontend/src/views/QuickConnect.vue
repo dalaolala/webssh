@@ -4,7 +4,7 @@
       <!-- 顶部工具栏 -->
       <el-header class="quick-connect-header">
         <div class="header-left">
-          <el-button @click="$router.back()" size="small">
+          <el-button @click="$router.push('/dashboard')" size="small">
             <el-icon><ArrowLeft /></el-icon>
             返回
           </el-button>
@@ -12,132 +12,182 @@
         </div>
       </el-header>
       
-      <!-- 主内容区域 -->
-      <el-main class="quick-connect-main">
-        <div class="connect-form-container">
-          <el-card class="connect-card">
-            <template #header>
-              <div class="card-header">
-                <h3>SSH连接信息</h3>
-                <p>输入服务器信息进行一次性连接（不保存）</p>
-              </div>
-            </template>
-            
-            <el-form :model="form" :rules="rules" ref="connectForm" label-width="100px">
-              <el-form-item label="主机地址" prop="host">
-                <el-input v-model="form.host" placeholder="请输入IP地址或域名" />
-              </el-form-item>
-              
-              <el-form-item label="端口" prop="port">
-                <el-input-number v-model="form.port" :min="1" :max="65535" />
-              </el-form-item>
-              
-              <el-form-item label="用户名" prop="username">
-                <el-input v-model="form.username" placeholder="请输入SSH用户名" />
-              </el-form-item>
-              
-              <el-form-item label="认证方式" prop="authType">
-                <el-radio-group v-model="form.authType">
-                  <el-radio label="password">密码认证</el-radio>
-                  <el-radio label="key">私钥认证</el-radio>
-                </el-radio-group>
-              </el-form-item>
-              
-              <el-form-item v-if="form.authType === 'password'" label="密码" prop="password">
-                <el-input 
-                  v-model="form.password" 
-                  type="password" 
-                  placeholder="请输入SSH密码" 
-                  show-password 
-                />
-              </el-form-item>
-              
-              <el-form-item v-if="form.authType === 'key'" label="私钥" prop="privateKey">
-                <el-input 
-                  v-model="form.privateKey" 
-                  type="textarea" 
-                  :rows="6" 
-                  placeholder="请输入SSH私钥内容" 
-                />
-              </el-form-item>
-              
-              <el-form-item>
-                <el-button 
-                  type="primary" 
-                  :loading="connecting" 
-                  @click="handleConnect"
-                  style="width: 100%"
-                >
-                  <el-icon><Connection /></el-icon>
-                  连接
-                </el-button>
-              </el-form-item>
-            </el-form>
-            
-            <!-- 连接状态提示 -->
-            <div v-if="connectionError" class="connection-error">
-              <el-alert 
-                :title="connectionError" 
-                type="error" 
-                show-icon 
+      <!-- 主内容区域：左侧历史树 + 右侧表单 -->
+      <el-container class="main-body">
+        <!-- 左侧：连接历史树 -->
+        <el-aside class="history-aside" width="300px">
+          <div class="aside-header">
+            <span class="aside-title">连接历史</span>
+            <el-button 
+              v-if="historyList.length > 0"
+              type="danger" 
+              size="small" 
+              text 
+              @click="clearAllHistory"
+            >
+              <el-icon><Delete /></el-icon>
+              清空
+            </el-button>
+          </div>
+
+          <div v-if="historyList.length > 0" class="history-tree">
+            <el-tree
+              :data="treeData"
+              :props="treeProps"
+              node-key="id"
+              default-expand-all
+              highlight-current
+              @node-click="handleTreeNodeClick"
+            >
+              <template #default="{ node, data }">
+                <div class="tree-node" :class="{ 'is-leaf': data.isLeaf }">
+                  <el-icon v-if="!data.isLeaf" class="tree-folder-icon"><Folder /></el-icon>
+                  <el-icon v-else class="tree-server-icon"><Monitor /></el-icon>
+                  <span class="tree-node-label">{{ node.label }}</span>
+                  <div class="tree-node-actions" v-if="data.isLeaf">
+                    <el-tag v-if="data.record?.hasSavedCredential" size="small" type="success" class="tree-tag">
+                      <el-icon style="vertical-align: middle;"><Lock /></el-icon>
+                    </el-tag>
+                    <el-button 
+                      type="danger" 
+                      size="small" 
+                      text 
+                      circle
+                      class="tree-delete-btn"
+                      @click.stop="removeHistoryByRecord(data.record)"
+                    >
+                      <el-icon><Close /></el-icon>
+                    </el-button>
+                  </div>
+                </div>
+              </template>
+            </el-tree>
+          </div>
+
+          <!-- 空状态 -->
+          <div v-else class="history-empty">
+            <el-empty description="暂无连接历史" :image-size="64" />
+          </div>
+
+        </el-aside>
+
+        <!-- 右侧：连接表单 -->
+        <el-main class="form-main">
+          <div class="connect-form-container">
+            <el-card class="connect-card">
+              <template #header>
+                <div class="card-header">
+                  <h3>SSH连接信息</h3>
+                  <p>输入服务器信息进行快速连接</p>
+                </div>
+              </template>
+
+              <el-alert
+                title="快速连接数据保存在本地浏览器中，更换设备或清除浏览器数据后将会丢失。"
+                type="warning"
+                show-icon
                 :closable="false"
+                style="margin-bottom: 20px;"
               />
-            </div>
-            
-            <div v-if="connecting" class="connecting-status">
-              <el-alert 
-                title="正在连接..." 
-                type="info" 
-                show-icon 
-                :closable="false"
-              />
-            </div>
-          </el-card>
-          
-          <!-- 快速连接示例 -->
-          <el-card class="examples-card">
-            <template #header>
-              <div class="card-header">
-                <h3>连接示例</h3>
-              </div>
-            </template>
-            
-            <div class="examples">
-              <div class="example-item" @click="fillExample('ubuntu')">
-                <h4>Ubuntu服务器</h4>
-                <p>主机: 192.168.1.100</p>
-                <p>端口: 22</p>
-                <p>用户: ubuntu</p>
+              
+              <el-form :model="form" :rules="rules" ref="connectForm" label-width="100px">
+                <el-form-item label="服务器名称" prop="name">
+                  <el-input v-model="form.name" placeholder="请输入服务器名称（可选）" />
+                </el-form-item>
+                
+                <el-form-item label="主机地址" prop="host">
+                  <el-input v-model="form.host" placeholder="请输入IP地址或域名" />
+                </el-form-item>
+                
+                <el-form-item label="端口" prop="port">
+                  <el-input-number v-model="form.port" :min="1" :max="65535" />
+                </el-form-item>
+                
+                <el-form-item label="用户名" prop="username">
+                  <el-input v-model="form.username" placeholder="请输入SSH用户名" />
+                </el-form-item>
+                
+                <el-form-item label="认证方式" prop="authType">
+                  <el-radio-group v-model="form.authType">
+                    <el-radio label="password">密码认证</el-radio>
+                    <el-radio label="key">私钥认证</el-radio>
+                  </el-radio-group>
+                </el-form-item>
+                
+                <el-form-item v-if="form.authType === 'password'" label="密码" prop="password">
+                  <el-input 
+                    v-model="form.password" 
+                    type="password" 
+                    placeholder="请输入SSH密码" 
+                    show-password 
+                  />
+                </el-form-item>
+                
+                <el-form-item v-if="form.authType === 'key'" label="私钥" prop="privateKey">
+                  <el-input 
+                    v-model="form.privateKey" 
+                    type="textarea" 
+                    :rows="6" 
+                    placeholder="请输入SSH私钥内容" 
+                  />
+                </el-form-item>
+
+                <!-- 保存密码复选框 -->
+                <el-form-item label=" ">
+                  <el-checkbox v-model="savePassword">
+                    保存密码到本地（记住凭据）
+                  </el-checkbox>
+                </el-form-item>
+                
+                <el-form-item>
+                  <el-button 
+                    type="primary" 
+                    :loading="connecting" 
+                    @click="handleConnect"
+                    style="width: 100%"
+                  >
+                    <el-icon><Connection /></el-icon>
+                    连接
+                  </el-button>
+                </el-form-item>
+              </el-form>
+              
+              <!-- 连接状态提示 -->
+              <div v-if="connectionError" class="connection-error">
+                <el-alert 
+                  :title="connectionError" 
+                  type="error" 
+                  show-icon 
+                  :closable="false"
+                />
               </div>
               
-              <div class="example-item" @click="fillExample('centos')">
-                <h4>CentOS服务器</h4>
-                <p>主机: 192.168.1.101</p>
-                <p>端口: 22</p>
-                <p>用户: root</p>
+              <div v-if="connecting" class="connecting-status">
+                <el-alert 
+                  title="正在连接..." 
+                  type="info" 
+                  show-icon 
+                  :closable="false"
+                />
               </div>
-              
-              <div class="example-item" @click="fillExample('docker')">
-                <h4>Docker容器</h4>
-                <p>主机: localhost</p>
-                <p>端口: 2222</p>
-                <p>用户: root</p>
-              </div>
-            </div>
-          </el-card>
-        </div>
-      </el-main>
+            </el-card>
+          </div>
+        </el-main>
+      </el-container>
     </el-container>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { ArrowLeft, Connection } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { ArrowLeft, Connection, Delete, Close, Monitor, Lock, Folder } from '@element-plus/icons-vue'
 import { useTerminalStore } from '@/stores/terminal'
 import { useAuthStore } from '@/stores/auth'
+
+const HISTORY_KEY = 'webssh_quick_connect_history'
+const MAX_HISTORY = 20
 
 const router = useRouter()
 const terminalStore = useTerminalStore()
@@ -146,8 +196,11 @@ const authStore = useAuthStore()
 const connectForm = ref()
 const connecting = ref(false)
 const connectionError = ref('')
+const savePassword = ref(false)
+const historyList = ref([])
 
 const form = reactive({
+  name: '',
   host: '',
   port: 22,
   username: '',
@@ -193,7 +246,147 @@ const rules = {
   ]
 }
 
-// 处理连接
+// ========== 树形数据 ==========
+
+const treeProps = {
+  children: 'children',
+  label: 'label'
+}
+
+// 将 historyList 转换为树形结构，按主机地址分组
+const treeData = computed(() => {
+  const groups = {}
+  
+  historyList.value.forEach((item, index) => {
+    const groupKey = item.host
+    if (!groups[groupKey]) {
+      groups[groupKey] = {
+        id: `group-${groupKey}`,
+        label: groupKey,
+        isLeaf: false,
+        children: []
+      }
+    }
+    
+    const displayName = item.name || `${item.username}@${item.host}:${item.port}`
+    groups[groupKey].children.push({
+      id: `item-${index}`,
+      label: displayName,
+      isLeaf: true,
+      record: item,
+      index: index
+    })
+  })
+  
+  return Object.values(groups)
+})
+
+const handleTreeNodeClick = (data) => {
+  if (data.isLeaf && data.record) {
+    fillFromHistory(data.record)
+  }
+}
+
+// ========== 历史记录管理 ==========
+
+const loadHistory = () => {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY)
+    historyList.value = raw ? JSON.parse(raw) : []
+  } catch {
+    historyList.value = []
+  }
+}
+
+const persistHistory = () => {
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(historyList.value))
+}
+
+const saveToHistory = () => {
+  const record = {
+    name: form.name || '',
+    host: form.host,
+    port: form.port,
+    username: form.username,
+    authType: form.authType,
+    connectedAt: Date.now(),
+    hasSavedCredential: savePassword.value
+  }
+
+  if (savePassword.value) {
+    if (form.authType === 'password') {
+      record.password = form.password
+    } else {
+      record.privateKey = form.privateKey
+    }
+  }
+
+  const idx = historyList.value.findIndex(
+    h => h.host === record.host && h.port === record.port && h.username === record.username
+  )
+  if (idx !== -1) {
+    historyList.value.splice(idx, 1)
+  }
+
+  historyList.value.unshift(record)
+
+  if (historyList.value.length > MAX_HISTORY) {
+    historyList.value = historyList.value.slice(0, MAX_HISTORY)
+  }
+
+  persistHistory()
+}
+
+const fillFromHistory = (item) => {
+  form.name = item.name || ''
+  form.host = item.host
+  form.port = item.port
+  form.username = item.username
+  form.authType = item.authType
+
+  if (item.hasSavedCredential) {
+    savePassword.value = true
+    if (item.authType === 'password') {
+      form.password = item.password || ''
+      form.privateKey = ''
+    } else {
+      form.privateKey = item.privateKey || ''
+      form.password = ''
+    }
+  } else {
+    savePassword.value = false
+    form.password = ''
+    form.privateKey = ''
+  }
+
+  ElMessage.success('已填充连接信息，请检查后点击连接')
+}
+
+const removeHistoryByRecord = (record) => {
+  const idx = historyList.value.findIndex(
+    h => h.host === record.host && h.port === record.port && h.username === record.username
+  )
+  if (idx !== -1) {
+    historyList.value.splice(idx, 1)
+    persistHistory()
+    ElMessage.info('已删除')
+  }
+}
+
+const clearAllHistory = () => {
+  ElMessageBox.confirm('确定要清空所有连接历史吗？', '清空历史', {
+    confirmButtonText: '确定',
+    cancelButtonText: '取消',
+    type: 'warning'
+  }).then(() => {
+    historyList.value = []
+    persistHistory()
+    ElMessage.success('已清空所有历史记录')
+  }).catch(() => {})
+}
+
+// ========== 连接逻辑 ==========
+
 const handleConnect = async () => {
   if (!connectForm.value) return
   
@@ -206,15 +399,23 @@ const handleConnect = async () => {
       return
     }
 
-    // 初始化Socket连接
-    if (!terminalStore.socket) {
-      terminalStore.connectSocket(authStore.token)
-    }
-
     connecting.value = true
     connectionError.value = ''
+
+    if (!terminalStore.socket) {
+      try {
+        await terminalStore.connectSocket(authStore.token)
+      } catch (error) {
+        connecting.value = false
+        connectionError.value = 'Socket连接失败: ' + error.message
+        return
+      }
+    }
+
+    saveToHistory()
     
     const connectionInfo = {
+      name: form.name || '',
       host: form.host,
       port: form.port,
       username: form.username
@@ -226,32 +427,10 @@ const handleConnect = async () => {
       connectionInfo.privateKey = form.privateKey
     }
     
-    // 执行快速连接
     terminalStore.quickConnect(connectionInfo)
     
-    // 监听连接状态
-    const checkConnection = setInterval(() => {
-      if (terminalStore.isConnected) {
-        clearInterval(checkConnection)
-        connecting.value = false
-        ElMessage.success('连接成功')
-        // 跳转到终端页面
-        router.push('/terminal')
-      } else if (terminalStore.connectionError) {
-        clearInterval(checkConnection)
-        connecting.value = false
-        connectionError.value = terminalStore.connectionError
-      }
-    }, 500)
-    
-    // 超时检查
-    setTimeout(() => {
-      if (connecting.value) {
-        clearInterval(checkConnection)
-        connecting.value = false
-        connectionError.value = '连接超时，请检查网络和服务器状态'
-      }
-    }, 15000)
+    connecting.value = false
+    router.push('/quick-connect-terminal')
     
   } catch (error) {
     connecting.value = false
@@ -259,49 +438,21 @@ const handleConnect = async () => {
   }
 }
 
-// 填充示例数据
-const fillExample = (type) => {
-  const examples = {
-    ubuntu: {
-      host: '192.168.1.100',
-      port: 22,
-      username: 'ubuntu',
-      authType: 'password',
-      password: ''
-    },
-    centos: {
-      host: '192.168.1.101',
-      port: 22,
-      username: 'root',
-      authType: 'password',
-      password: ''
-    },
-    docker: {
-      host: 'localhost',
-      port: 2222,
-      username: 'root',
-      authType: 'password',
-      password: ''
-    }
-  }
-  
-  Object.assign(form, examples[type])
-  ElMessage.info(`已填充${type}示例配置，请填写密码后连接`)
-}
-
 onMounted(() => {
-  // 组件挂载时的初始化
+  loadHistory()
 })
 </script>
 
 <style scoped>
 .quick-connect-page {
   height: 100vh;
-  background-color: #f5f5f5;
+  background-color: #f0f2f5;
 }
 
 .quick-connect-container {
   height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .quick-connect-header {
@@ -310,6 +461,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   padding: 0 20px;
+  flex-shrink: 0;
 }
 
 .header-left {
@@ -324,31 +476,153 @@ onMounted(() => {
   color: #333;
 }
 
-.quick-connect-main {
-  padding: 40px;
+/* 主体布局 */
+.main-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* 左侧历史树 */
+.history-aside {
+  background: white;
+  border-right: 1px solid #e4e7ed;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.aside-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid #f0f0f0;
+  flex-shrink: 0;
+}
+
+.aside-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.history-tree {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.history-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.aside-tip {
+  flex-shrink: 0;
+  padding: 12px;
+  border-top: 1px solid #f0f0f0;
+}
+
+/* 树节点样式 */
+.tree-node {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 2px 0;
+  font-size: 13px;
+}
+
+.tree-folder-icon {
+  color: #e6a23c;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.tree-server-icon {
+  color: #409eff;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.tree-node-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #303133;
+}
+
+.tree-node.is-leaf .tree-node-label {
+  color: #606266;
+}
+
+.tree-node-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.tree-node:hover .tree-node-actions {
+  opacity: 1;
+}
+
+.tree-tag {
+  transform: scale(0.85);
+}
+
+.tree-delete-btn {
+  width: 20px !important;
+  height: 20px !important;
+}
+
+/* Element Tree 深度覆盖 */
+:deep(.el-tree-node__content) {
+  height: 36px;
+  padding-right: 8px !important;
+}
+
+:deep(.el-tree-node__content:hover) {
+  background-color: #f5f7fa;
+}
+
+:deep(.el-tree--highlight-current .el-tree-node.is-current > .el-tree-node__content) {
+  background-color: #ecf5ff;
+}
+
+/* 右侧表单 */
+.form-main {
+  padding: 30px 40px;
+  overflow-y: auto;
   display: flex;
   justify-content: center;
+  align-items: flex-start;
 }
 
 .connect-form-container {
   width: 100%;
-  max-width: 600px;
+  max-width: 580px;
 }
 
-.connect-card,
-.examples-card {
+.connect-card {
   margin-bottom: 20px;
 }
 
 .card-header h3 {
-  margin: 0 0 8px 0;
+  margin: 0 0 4px 0;
   color: #333;
 }
 
 .card-header p {
   margin: 0;
-  color: #666;
-  font-size: 14px;
+  color: #999;
+  font-size: 13px;
 }
 
 .connection-error,
@@ -356,46 +630,21 @@ onMounted(() => {
   margin-top: 20px;
 }
 
-.examples {
-  display: grid;
-  gap: 16px;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-}
-
-.example-item {
-  padding: 16px;
-  border: 1px solid #e4e7ed;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.3s;
-}
-
-.example-item:hover {
-  border-color: #409eff;
-  background-color: #f5f7fa;
-  transform: translateY(-2px);
-}
-
-.example-item h4 {
-  margin: 0 0 8px 0;
-  color: #333;
-  font-size: 14px;
-}
-
-.example-item p {
-  margin: 4px 0;
-  color: #666;
-  font-size: 12px;
-}
-
 /* 响应式设计 */
 @media (max-width: 768px) {
-  .quick-connect-main {
-    padding: 20px;
+  .main-body {
+    flex-direction: column;
   }
   
-  .examples {
-    grid-template-columns: 1fr;
+  .history-aside {
+    width: 100% !important;
+    max-height: 200px;
+    border-right: none;
+    border-bottom: 1px solid #e4e7ed;
+  }
+  
+  .form-main {
+    padding: 20px;
   }
 }
 </style>

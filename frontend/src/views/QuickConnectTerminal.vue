@@ -2,71 +2,14 @@
   <div class="terminal-page">
     <el-container class="terminal-container">
       <!-- 顶部工具栏 -->
-      <el-header class="terminal-header">
+      <el-header class="terminal-header" height="36px">
         <div class="header-left">
-          <el-button @click="$router.back()" size="small">
+          <el-button @click="goBack" size="small" text style="color: #ccc;">
             <el-icon><ArrowLeft /></el-icon>
             返回
           </el-button>
-          <span class="server-name">{{ currentServer?.name || '快速连接' }}</span>
-          <span class="server-info">{{ currentServer?.host }}:{{ currentServer?.port }}</span>
-        </div>
-        
-        <div class="header-right">
-          <!-- SFTP文件管理按钮 -->
-          <el-button 
-            v-if="terminalStore.isConnected"
-            size="small"
-            :type="showSftp ? 'primary' : 'default'"
-            @click="toggleSftpPanel"
-          >
-            <el-icon><Folder /></el-icon>
-            {{ showSftp ? '隐藏文件' : '文件管理' }}
-          </el-button>
-          
-          <el-button-group>
-            <el-button 
-              v-if="!terminalStore.isConnected && !terminalStore.isConnecting"
-              type="primary" 
-              size="small"
-              @click="connectToServer"
-            >
-              <el-icon><Connection /></el-icon>
-              连接
-            </el-button>
-            
-            <el-button 
-              v-if="terminalStore.isConnecting"
-              type="warning" 
-              size="small"
-              :loading="true"
-            >
-              连接中...
-            </el-button>
-            
-            <el-button 
-              v-if="terminalStore.isConnected"
-              type="danger" 
-              size="small"
-              @click="terminalStore.disconnect"
-            >
-              <el-icon><Close /></el-icon>
-              断开
-            </el-button>
-          </el-button-group>
-          
-          <el-button size="small" @click="clearTerminal">
-            <el-icon><Delete /></el-icon>
-            清屏
-          </el-button>
-          <el-button size="small" @click="copySelected" class="copy-button">
-            <el-icon><Document /></el-icon>
-            复制选中
-          </el-button>
-          <el-button size="small" @click="pasteFromClipboard">
-            <el-icon><Edit /></el-icon>
-            粘贴剪贴板
-          </el-button>
+          <span class="server-name">{{ serverTitle }}</span>
+          <span class="server-info">{{ connectionDisplay }}</span>
         </div>
       </el-header>
       
@@ -167,7 +110,7 @@
             <div class="prompt-content">
               <el-icon size="48" color="#909399"><Monitor /></el-icon>
               <h3>准备连接</h3>
-              <p>点击"连接"按钮开始SSH会话</p>
+              <p>正在初始化快速连接...</p>
             </div>
           </div>
         </el-main>
@@ -182,11 +125,7 @@
           </span>
           <span class="status-item">
             <el-icon><Monitor /></el-icon>
-            {{ currentServer?.host }}:{{ currentServer?.port }}
-          </span>
-          <span class="status-item">
-            <el-icon><User /></el-icon>
-            {{ currentServer?.username }}
+            {{ connectionDisplay }}
           </span>
         </div>
       </el-footer>
@@ -195,26 +134,24 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { Terminal } from 'xterm'
 import { FitAddon } from 'xterm-addon-fit'
 import { WebLinksAddon } from 'xterm-addon-web-links'
-import { ArrowLeft, Connection, Close, Delete, Monitor, Folder, User, Document, Edit, DocumentCopy, DocumentAdd, Select } from '@element-plus/icons-vue'
+import { ArrowLeft, Connection, Close, Delete, Monitor, Folder, Document, Edit, DocumentCopy, DocumentAdd, Select } from '@element-plus/icons-vue'
 import { useTerminalStore } from '@/stores/terminal'
-import { useServersStore } from '@/stores/servers'
 import { useAuthStore } from '@/stores/auth'
 import { useSftpStore } from '@/stores/sftp'
+import { ElMessage } from 'element-plus'
 import SftpFileManager from '@/components/SftpFileManager.vue'
 
-const route = useRoute()
+const router = useRouter()
 const terminalStore = useTerminalStore()
-const serversStore = useServersStore()
 const authStore = useAuthStore()
 const sftpStore = useSftpStore()
 
 const terminalRef = ref()
-const currentServer = ref(null)
 const showSftp = ref(false)
 const sftpPanelWidth = ref(350)
 
@@ -230,7 +167,27 @@ let fitAddon = null
 let initialScrollTop = 0
 let wheelHandler = null
 let viewportWheelHandler = null
-let isComposing = false // 标记 IME 输入法是否正在组合输入中
+let isComposing = false
+
+// 连接显示信息（从 terminalStore.currentConnection 获取）
+const connectionDisplay = computed(() => {
+  const conn = terminalStore.currentConnection
+  if (conn) {
+    return `${conn.username || ''}@${conn.host || ''}:${conn.port || 22}`
+  }
+  return ''
+})
+
+const serverTitle = computed(() => {
+  const conn = terminalStore.currentConnection
+  return conn?.name || '快速连接'
+})
+
+// 返回快速连接页面
+const goBack = () => {
+  terminalStore.disconnect()
+  router.push('/quick-connect')
+}
 
 // 初始化终端
 const initTerminal = () => {
@@ -246,34 +203,31 @@ const initTerminal = () => {
       selection: 'rgba(58, 134, 255, 0.3)',
       selectionForeground: undefined
     },
-    disableStdin: false, // 启用终端输入
-    scrollback: 10000, // 滚动历史缓冲区
-    convertEol: true, // 转换行结束符
+    disableStdin: false,
+    scrollback: 10000,
+    convertEol: true,
     allowTransparency: false,
     tabStopWidth: 8,
-    cursorStyle: 'block', // 光标样式
-    bellStyle: 'sound', // 铃声样式
+    cursorStyle: 'block',
+    bellStyle: 'sound',
     allowProposedApi: true,
-    windowsMode: true, // Windows兼容模式
-    screenReaderMode: false, // 禁用屏幕阅读器模式，避免辅助输入框问题
-    // 滚动条配置
-    scrollOnUserInput: true, // 用户输入时自动滚动到底部
-    scrollOnOutput: false, // 输出时不自动滚动，让用户手动控制
-    scrollSensitivity: 3, // 滚动灵敏度
-    smoothScrollDuration: 0, // 平滑滚动持续时间（0为禁用）
-    fastScrollSensitivity: 5, // 快速滚动灵敏度
-    fastScrollModifier: 'alt', // 快速滚动修饰键
-    // 其他配置
-    macOptionIsMeta: false, // Windows环境下使用标准行为
+    windowsMode: true,
+    screenReaderMode: false,
+    scrollOnUserInput: true,
+    scrollOnOutput: false,
+    scrollSensitivity: 3,
+    smoothScrollDuration: 0,
+    fastScrollSensitivity: 5,
+    fastScrollModifier: 'alt',
+    macOptionIsMeta: false,
     macOptionClickForcesSelection: false,
     rightClickSelectsWord: false,
-    rendererType: 'canvas', // 使用canvas渲染器以获得更好的性能
+    rendererType: 'canvas',
   })
 
   fitAddon = new FitAddon()
   term.loadAddon(fitAddon)
   
-  // 添加Web链接支持
   const webLinksAddon = new WebLinksAddon()
   term.loadAddon(webLinksAddon)
   
@@ -281,30 +235,14 @@ const initTerminal = () => {
       term.open(terminalRef.value)
       fitAddon.fit()
       
-      // 聚焦终端
       term.focus()
       
-      // ================================================================
-      // 修复中文输入法（IME）渲染到终端顶部的 Bug
-      // ----------------------------------------------------------------
-      // 根本原因：xterm.js 内部 compositionHelper 监听了 helper textarea
-      // 的 compositionupdate 事件，在 IME 选字过程中会直接向 xterm 的内部
-      // buffer 写入候选字并渲染到 canvas 第0行（终端顶部）。
-      //
-      // 解决方案：
-      // 1. 在「捕获阶段」（useCapture=true）监听 compositionupdate/
-      //    compositionstart，调用 stopImmediatePropagation() 阻止 xterm
-      //    内部监听器收到事件 → 候选字不会被写入 canvas。
-      // 2. compositionend 时从 e.data 取出最终文字直接发给服务器，
-      //    并清空 textarea，防止 xterm 的 onData 再次重复发送。
-      // ================================================================
+      // IME 修复（与 Terminal.vue 相同）
       const setupHelperTextarea = () => {
         const textarea = terminalRef.value?.querySelector('.xterm-helper-textarea')
         if (textarea && !textarea._imeFixed) {
-          textarea._imeFixed = true // 防止重复绑定
+          textarea._imeFixed = true
 
-          // 保留 textarea 在终端容器内（确保 IME 候选框能在屏幕上弹出）
-          // 仅隐藏其视觉显示
           textarea.style.opacity = '0'
           textarea.style.color = 'transparent'
           textarea.style.position = 'absolute'
@@ -315,18 +253,15 @@ const initTerminal = () => {
           textarea.style.zIndex = '1'
           textarea.style.caretColor = 'transparent'
 
-          // 【核心修复】捕获阶段拦截 compositionstart，阻止 xterm 内部处理
           textarea.addEventListener('compositionstart', (e) => {
             isComposing = true
-            e.stopImmediatePropagation() // 阻止 xterm 内部 compositionHelper 收到此事件
+            e.stopImmediatePropagation()
           }, true)
 
-          // 【核心修复】捕获阶段拦截 compositionupdate，阻止 xterm 将候选字写入 canvas
           textarea.addEventListener('compositionupdate', (e) => {
-            e.stopImmediatePropagation() // 阻止 xterm 内部 compositionHelper 渲染候选字
+            e.stopImmediatePropagation()
           }, true)
 
-          // compositionend：取最终确认文字发给服务器，清空 textarea
           textarea.addEventListener('compositionend', (e) => {
             e.stopImmediatePropagation()
             isComposing = false
@@ -334,16 +269,13 @@ const initTerminal = () => {
             if (text && terminalStore.isConnected) {
               terminalStore.sendInput(text)
             }
-            // 清空 textarea 防止 xterm onData 再次重复发送
             Promise.resolve().then(() => { textarea.value = '' })
           }, true)
         }
       }
       
-      // 初始设置
       setupHelperTextarea()
       
-      // 监听DOM变化，确保 helper textarea 创建后及时处理
       const observer = new MutationObserver((mutations) => {
         mutations.forEach((mutation) => {
           if (mutation.type === 'childList') {
@@ -354,11 +286,10 @@ const initTerminal = () => {
       
       observer.observe(terminalRef.value, { childList: true, subtree: true })
       
-      // 处理终端输入 - 直接发送到服务器
-      // IME 组合期间（isComposing === true）忽略 onData，最终文字由 compositionend 处理
+      // 处理终端输入
       term.onData((data) => {
         if (isComposing) {
-          return // IME 组合进行中，跳过，避免发送候选字
+          return
         }
         if (terminalStore.isConnected) {
           terminalStore.sendInput(data)
@@ -371,54 +302,43 @@ const initTerminal = () => {
       const enableWheelScroll = () => {
         const viewport = terminalRef.value?.querySelector('.xterm-viewport')
         if (viewport) {
-          // 移除之前的事件监听器
           if (viewportWheelHandler) {
             viewport.removeEventListener('wheel', viewportWheelHandler)
           }
           
-          // 添加新的滚轮事件监听器 - 直接操作滚动条
           viewportWheelHandler = (event) => {
             event.preventDefault()
             const deltaY = event.deltaY
             const deltaMode = event.deltaMode
             
-            // 根据滚轮方向和速度滚动终端
             if (deltaMode === 0) {
-              // 像素模式 - 使用更平滑的滚动
               const scrollAmount = Math.sign(deltaY) * Math.ceil(Math.abs(deltaY) / 8)
-              viewport.scrollTop += scrollAmount * 20 // 增加滚动距离
+              viewport.scrollTop += scrollAmount * 20
             } else if (deltaMode === 1) {
-              // 行模式
               viewport.scrollTop += deltaY * 20
             } else {
-              // 页面模式
               viewport.scrollTop += deltaY * viewport.clientHeight
             }
           }
           
           viewport.addEventListener('wheel', viewportWheelHandler, { passive: false })
           
-          // 确保滚动条可以正常拖动
           viewport.style.overflowY = 'auto'
           viewport.style.overflowX = 'hidden'
         }
       }
       
-      // 初始启用滚轮滚动
       enableWheelScroll()
       
-      // 监听DOM变化，确保滚轮支持始终生效
       const wheelObserver = new MutationObserver(() => {
         enableWheelScroll()
       })
       wheelObserver.observe(terminalRef.value, { childList: true, subtree: true })
       
-      // 添加容器级别的滚轮事件作为备用
       wheelHandler = (e) => {
         const viewport = terminalRef.value?.querySelector('.xterm-viewport')
         if (viewport) {
           e.preventDefault()
-          // 直接操作滚动条位置
           viewport.scrollTop += e.deltaY
         }
       }
@@ -426,7 +346,6 @@ const initTerminal = () => {
     
     // 处理终端按键事件
     term.attachCustomKeyEventHandler((event) => {
-      // 防止浏览器默认行为，但允许常用快捷键
       if ((event.ctrlKey || event.metaKey) && 
           !['c', 'v', 'a', 'z', 'x', 'y'].includes(event.key.toLowerCase())) {
         event.preventDefault()
@@ -434,7 +353,7 @@ const initTerminal = () => {
       return true
     })
     
-    // 防止空格触发容器或页面滚动，保持滚动条跟随光标
+    // 防止空格触发容器或页面滚动
     term.attachCustomKeyEventHandler((event) => {
       if (event.code === 'Space' || event.key === ' ') {
         event.preventDefault()
@@ -457,7 +376,6 @@ const initTerminal = () => {
           }
         }).catch(err => {
           console.warn('粘贴失败:', err)
-          // 备用方案：允许浏览器默认粘贴行为
         })
         return false
       }
@@ -479,47 +397,6 @@ const initTerminal = () => {
   }
 }
 
-// 连接到服务器
-const connectToServer = async () => {
-  if (!authStore.token) {
-    // 显示用户友好的认证错误提示
-    if (term) {
-      term.write('\r\n\x1b[31m未认证，请重新登录后重试\x1b[0m\r\n')
-    }
-    ElMessage.error('未认证，请重新登录')
-    console.error('未认证')
-    return
-  }
-
-  const serverId = route.params.serverId
-  
-  if (serverId) {
-    // 获取服务器基本信息（不含密钥，仅用于界面显示）
-    const result = await serversStore.getServerInfo(serverId)
-    if (result.success) {
-      currentServer.value = result.data.server
-      
-      // 初始化Socket连接（如果尚未连接）
-      if (!terminalStore.socket) {
-        try {
-          await terminalStore.connectSocket(authStore.token)
-          console.log('Socket连接和认证成功')
-        } catch (error) {
-          console.error('Socket连接或认证失败:', error)
-          if (term) {
-            term.write(`\r\n\x1b[31mSocket连接失败: ${error.message}\x1b[0m\r\n`)
-          }
-          ElMessage.error('Socket连接失败')
-          return
-        }
-      }
-      
-      // 认证成功后进行SSH连接
-      terminalStore.connectToServer(serverId)
-    }
-  }
-}
-
 // 聚焦终端
 const focusTerminal = () => {
   if (term) {
@@ -531,7 +408,6 @@ const focusTerminal = () => {
 const toggleSftpPanel = () => {
   showSftp.value = !showSftp.value
   
-  // 延迟调整终端大小
   setTimeout(() => {
     handleResize()
   }, 100)
@@ -539,12 +415,13 @@ const toggleSftpPanel = () => {
 
 // 连接SFTP
 const connectSftp = async () => {
-  if (!currentServer.value) {
-    console.error('没有可用的服务器信息')
+  const conn = terminalStore.currentConnection
+  if (!conn) {
+    console.error('没有可用的连接信息')
     return
   }
   
-  const success = await sftpStore.connectSftp(currentServer.value)
+  const success = await sftpStore.connectSftp(conn)
   if (success) {
     console.log('SFTP连接成功')
   }
@@ -565,18 +442,17 @@ const hideContextMenu = () => {
   contextMenu.value.visible = false
 }
 
+// 全局点击关闭右键菜单
 const onDocumentClick = () => {
   if (contextMenu.value.visible) {
     hideContextMenu()
   }
 }
 
-// 检查是否有选中的文本
 const hasSelection = () => {
   return term && term.getSelection() && term.getSelection().length > 0
 }
 
-// 从右键菜单复制
 const copyFromContextMenu = async () => {
   if (term && hasSelection()) {
     const selection = term.getSelection()
@@ -591,7 +467,6 @@ const copyFromContextMenu = async () => {
   }
 }
 
-// 从右键菜单粘贴
 const pasteFromContextMenu = async () => {
   if (term && terminalStore.isConnected) {
     try {
@@ -605,7 +480,6 @@ const pasteFromContextMenu = async () => {
   }
 }
 
-// 从右键菜单全选
 const selectAllFromContextMenu = () => {
   if (term) {
     term.selectAll()
@@ -613,9 +487,7 @@ const selectAllFromContextMenu = () => {
   }
 }
 
-// 清屏功能
 const clearTerminal = () => {
-  // 清空终端状态
   resetConnectedState()
 }
 
@@ -626,7 +498,6 @@ const copySelected = async () => {
       try {
         await navigator.clipboard.writeText(selection)
         
-        // 添加复制成功视觉反馈
         const copyButton = document.querySelector('.copy-button')
         if (copyButton) {
           copyButton.classList.add('copied')
@@ -635,7 +506,6 @@ const copySelected = async () => {
           }, 1000)
         }
         
-        // 显示成功消息
         ElMessage.success(`已复制 ${selection.length} 个字符`)
       } catch (error) {
         console.warn('复制失败:', error)
@@ -661,7 +531,6 @@ const resetConnectedState = () => {
   if (term) {
     term.reset()
     term.focus()
-    // 连接提示
     term.write('\x1b[32mSSH连接已建立，可以开始输入命令\x1b[0m\r\n\r\n')
     term.write('\x1b[?25h')
     if (typeof term.scrollToTop === 'function') {
@@ -674,7 +543,7 @@ const resetConnectedState = () => {
   }
 }
 
-// 监听终端输出变化，让滚动条跟随光标到底部
+// 监听终端输出变化
 watch(() => terminalStore.terminalOutput, (newOutput, oldOutput) => {
   if (term && terminalStore.isConnected && newOutput !== oldOutput) {
     const newData = newOutput.slice(oldOutput.length)
@@ -683,7 +552,6 @@ watch(() => terminalStore.terminalOutput, (newOutput, oldOutput) => {
       if (newData.includes('\x1b[H') && newData.includes('\x1b[2J')) {
         resetConnectedState()
       } else {
-        // 仅在用户输入时滚动到底部，其他情况下保持当前位置
         if (terminalStore.scrollOnUserInput) {
           term.scrollToBottom()
         }
@@ -696,43 +564,34 @@ watch(() => terminalStore.terminalOutput, (newOutput, oldOutput) => {
 watch(() => terminalStore.isConnected, (isConnected, wasConnected) => {
   if (term) {
     if (isConnected && !wasConnected) {
-      // 连接成功时清空终端并聚焦
       term.clear()
       term.focus()
       
-      // 延迟写入欢迎信息，确保终端准备好
       setTimeout(() => {
         term.write('\x1b[32mSSH连接已建立，可以开始输入命令\x1b[0m\r\n\r\n')
         
-        // 确保光标可见，并将滚动条保持在顶部
-        term.write('\x1b[?25h') // 显示光标
+        term.write('\x1b[?25h')
         
-        // 强制将滚动条设置为顶部
         if (typeof term.scrollToTop === 'function') {
           term.scrollToTop()
         }
         
-        // 直接操作DOM滚动条确保位置正确
         const viewport = terminalRef.value?.querySelector('.xterm-viewport')
         if (viewport) {
-          initialScrollTop = 0 // 初始滚动位置设为顶部
+          initialScrollTop = 0
           viewport.scrollTop = 0
           
-          // 添加延迟确保滚动条位置设置生效
           setTimeout(() => {
             viewport.scrollTop = 0
           }, 50)
         }
       }, 100)
     } else if (!isConnected && wasConnected) {
-      // 断开时显示断开信息
       term.write('\r\n\x1b[31mSSH连接已断开\x1b[0m\r\n')
       
-      // 断开SFTP连接
       sftpStore.disconnectSftp()
       showSftp.value = false
     }
-    // 无论连接还是断开，重新计算终端尺寸以适应底部内边距
     setTimeout(() => { handleResize() }, 150)
   }
 })
@@ -749,7 +608,6 @@ const handleResize = () => {
   if (fitAddon) {
     fitAddon.fit()
     
-    // 发送终端大小到服务器
     const dimensions = fitAddon.proposeDimensions()
     if (dimensions) {
       terminalStore.resizeTerminal({
@@ -766,18 +624,34 @@ onMounted(async () => {
   await nextTick()
   initTerminal()
   
-  // 监听窗口大小变化
   window.addEventListener('resize', handleResize)
   document.addEventListener('click', onDocumentClick)
   
-  // 如果是服务器连接，自动连接
-  if (route.params.serverId) {
-    await connectToServer()
+  // 快速连接模式：连接已由 QuickConnect.vue 发起
+  // 如果连接已建立且有缓冲输出，立即写入终端
+  await nextTick()
+  
+  if (terminalStore.isConnected && term) {
+    // 已连接：显示欢迎信息
+    term.clear()
+    term.write('\x1b[32mSSH连接已建立，可以开始输入命令\x1b[0m\r\n\r\n')
+    
+    // 写入已缓冲的输出数据
+    if (terminalStore.terminalOutput) {
+      term.write(terminalStore.terminalOutput)
+    }
+    
+    // 发送 resize 触发服务器重新绘制（关键：让远程 shell 发送完整的提示符）
+    setTimeout(() => {
+      handleResize()
+      term.focus()
+    }, 200)
+  } else if (terminalStore.isConnecting && term) {
+    term.write('\x1b[33m正在连接服务器...\x1b[0m\r\n')
   }
 })
 
 onUnmounted(() => {
-  // 清理资源
   terminalStore.disconnectSocket()
   sftpStore.disconnectSftp()
   if (term) {
@@ -815,10 +689,11 @@ onUnmounted(() => {
   background-color: #2d2d30;
   border-bottom: 1px solid #3e3e42;
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 0 20px;
+  padding: 0 12px;
   color: white;
+  height: 36px;
+  flex-shrink: 0;
 }
 
 .header-left {
@@ -845,7 +720,7 @@ onUnmounted(() => {
 
 .main-content {
   flex: 1;
-  min-height: 0; /* 关键：允许 flex 子项缩小到内容以下 */
+  min-height: 0;
   display: flex;
   flex-direction: row;
   align-items: stretch;
@@ -897,7 +772,7 @@ onUnmounted(() => {
   transition: width 0.3s ease;
   height: 100%;
   min-height: 400px;
-  overflow: hidden; /* 外层容器不需要滚动 */
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
@@ -906,7 +781,7 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
   padding: 0;
-  padding-bottom: 8px; /* 底部留出缓冲，避免最后一行命令行贴边被遥盖 */
+  padding-bottom: 8px;
   cursor: text;
   overflow: hidden;
   position: relative;
@@ -992,7 +867,7 @@ onUnmounted(() => {
 }
 
 .terminal-footer {
-  flex-shrink: 0; /* 确保 footer 占据固定高度，不压缩也不覆盖终端 */
+  flex-shrink: 0;
   background-color: #2d2d30;
   border-top: 1px solid #3e3e42;
   height: 40px;
@@ -1034,7 +909,6 @@ onUnmounted(() => {
   background-color: #1e1e1e !important;
 }
 
-/* xterm-helper-textarea: 仅隐藏视觉，保留事件监听能力（IME 修复需要） */
 :deep(.xterm-helper-textarea) {
   opacity: 0 !important;
   color: transparent !important;
@@ -1046,7 +920,6 @@ onUnmounted(() => {
   margin: 0 !important;
 }
 
-/* 复制按钮高亮效果 */
 .copy-button {
   transition: all 0.3s ease;
 }
@@ -1064,16 +937,14 @@ onUnmounted(() => {
   border-color: rgba(58, 134, 255, 0.6);
 }
 
-/* 终端选择文本高亮效果优化 */
 :deep(.xterm .xterm-selection) {
   background-color: rgba(58, 134, 255, 0.2) !important;
   border-radius: 2px;
   mix-blend-mode: screen;
 }
 
-/* 统一终端滚动条样式 */
 :deep(.xterm) {
-  padding: 0 !important; /* 移除内边距，让内容从顶部开始 */
+  padding: 0 !important;
   overflow: hidden !important;
   position: relative !important;
   height: 100% !important;
@@ -1103,7 +974,6 @@ onUnmounted(() => {
   pointer-events: auto !important;
 }
 
-/* Webkit浏览器滚动条样式 */
 :deep(.xterm-viewport::-webkit-scrollbar) {
   width: 12px;
 }
@@ -1130,7 +1000,6 @@ onUnmounted(() => {
   background: rgba(255, 255, 255, 0.7);
 }
 
-/* 确保滚动条和屏幕可见 */
 :deep(.xterm-screen) {
   overflow: visible !important;
   width: 100% !important;
@@ -1142,7 +1011,6 @@ onUnmounted(() => {
   overflow: visible !important;
 }
 
-/* 隐藏XTerm.js字符测量元素 */
 :deep(.xterm-char-measure-element) {
   position: absolute !important;
   left: -9999px !important;
@@ -1154,7 +1022,6 @@ onUnmounted(() => {
   pointer-events: none !important;
 }
 
-/* 确保终端容器正确设置 */
 .terminal {
   position: relative;
   overflow: hidden;
@@ -1166,7 +1033,6 @@ onUnmounted(() => {
   flex-direction: column;
 }
 
-/* 确保终端文本可见 */
 :deep(.xterm-rows) {
   color: #ffffff !important;
   background-color: #1e1e1e !important;
