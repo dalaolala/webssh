@@ -5,7 +5,7 @@
       <el-container class="main-content">
         <!-- SFTP文件管理器侧边栏 -->
         <el-aside 
-          v-if="showSftp && terminalStore.isConnected" 
+          v-if="showSftp && isConnected" 
           class="sftp-sidebar"
           :width="sftpPanelWidth + 'px'"
         >
@@ -56,7 +56,7 @@
             <div 
               class="menu-item" 
               @click="pasteFromContextMenu"
-              :class="{ disabled: !terminalStore.isConnected }"
+              :class="{ disabled: !isConnected }"
             >
               <el-icon><DocumentAdd /></el-icon>
               <span>粘贴</span>
@@ -74,7 +74,7 @@
           </div>
           
           <!-- 连接提示 -->
-          <div v-if="terminalStore.isConnecting" class="connection-status">
+          <div v-if="isConnecting" class="connection-status">
             <el-alert 
               title="正在连接服务器..." 
               type="info" 
@@ -85,16 +85,16 @@
           </div>
           
           <!-- 连接状态提示 -->
-          <div v-if="terminalStore.connectionError" class="connection-error">
+          <div v-if="connectionError" class="connection-error">
             <el-alert 
-              :title="terminalStore.connectionError" 
+              :title="connectionError" 
               type="error" 
               show-icon 
               :closable="false"
             />
           </div>
           
-          <div v-else-if="!terminalStore.isConnected && !terminalStore.isConnecting" class="connection-prompt">
+          <div v-else-if="!isConnected && !isConnecting" class="connection-prompt">
             <div class="prompt-content">
               <el-icon size="48" color="#909399"><Monitor /></el-icon>
               <h3>准备连接</h3>
@@ -105,7 +105,7 @@
       </el-container>
       
       <!-- 状态栏 -->
-      <el-footer class="terminal-footer" v-if="terminalStore.isConnected">
+      <el-footer class="terminal-footer" v-if="isConnected">
         <div class="status-bar">
           <span class="status-item">
             <el-icon><Connection /></el-icon>
@@ -128,14 +128,25 @@ import { Terminal } from 'xterm'
 import { FitAddon } from 'xterm-addon-fit'
 import { WebLinksAddon } from 'xterm-addon-web-links'
 import { ArrowLeft, Connection, Close, Delete, Monitor, Folder, Document, Edit, DocumentCopy, DocumentAdd, Select } from '@element-plus/icons-vue'
-import { useTerminalStore } from '@/stores/terminal'
 import { useAuthStore } from '@/stores/auth'
 import { useSftpStore } from '@/stores/sftp'
 import { ElMessage } from 'element-plus'
 import SftpFileManager from '@/components/SftpFileManager.vue'
+import { io } from 'socket.io-client'
 
-const router = useRouter()
-const terminalStore = useTerminalStore()
+const props = defineProps({
+  tabId: {
+    type: String,
+    required: true
+  },
+  connectionInfo: {
+    type: Object,
+    required: true
+  }
+})
+
+const emit = defineEmits(['close'])
+
 const authStore = useAuthStore()
 const sftpStore = useSftpStore()
 
@@ -157,9 +168,15 @@ let wheelHandler = null
 let viewportWheelHandler = null
 let isComposing = false
 
-// 连接显示信息（从 terminalStore.currentConnection 获取）
+// 本地连接状态
+const isConnected = ref(false)
+const isConnecting = ref(false)
+const connectionError = ref(null)
+let socket = null
+
+// 连接显示信息
 const connectionDisplay = computed(() => {
-  const conn = terminalStore.currentConnection
+  const conn = props.connectionInfo
   if (conn) {
     return `${conn.username || ''}@${conn.host || ''}:${conn.port || 22}`
   }
@@ -167,14 +184,12 @@ const connectionDisplay = computed(() => {
 })
 
 const serverTitle = computed(() => {
-  const conn = terminalStore.currentConnection
-  return conn?.name || '快速连接'
+  return props.connectionInfo?.name || '快速连接'
 })
 
-// 返回快速连接页面
+// 返回/关闭Tab
 const goBack = () => {
-  terminalStore.disconnect()
-  router.push('/quick-connect')
+  emit('close')
 }
 
 // 初始化终端
@@ -254,8 +269,8 @@ const initTerminal = () => {
             e.stopImmediatePropagation()
             isComposing = false
             const text = e.data
-            if (text && terminalStore.isConnected) {
-              terminalStore.sendInput(text)
+            if (text && isConnected.value && socket) {
+              socket.emit('ssh-input', text)
             }
             Promise.resolve().then(() => { textarea.value = '' })
           }, true)
@@ -279,10 +294,10 @@ const initTerminal = () => {
         if (isComposing) {
           return
         }
-        if (terminalStore.isConnected) {
-          terminalStore.sendInput(data)
+        if (isConnected.value && socket) {
+          socket.emit('ssh-input', data)
         } else {
-          term.write('\r\n\x1b[31m未连接到服务器，请先连接\x1b[0m\r\n')
+          term.write('\r\n\x1b[31m未连接到服务器\x1b[0m\r\n')
         }
       })
       
@@ -345,8 +360,8 @@ const initTerminal = () => {
     term.attachCustomKeyEventHandler((event) => {
       if (event.code === 'Space' || event.key === ' ') {
         event.preventDefault()
-        if (terminalStore.isConnected) {
-          terminalStore.sendInput(' ')
+        if (isConnected.value && socket) {
+          socket.emit('ssh-input', ' ')
           term.scrollToBottom()
         }
         return false
@@ -359,8 +374,8 @@ const initTerminal = () => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v') {
         event.preventDefault()
         navigator.clipboard.readText().then(text => {
-          if (terminalStore.isConnected) {
-            terminalStore.sendInput(text)
+          if (isConnected.value && socket) {
+            socket.emit('ssh-input', text)
           }
         }).catch(err => {
           console.warn('粘贴失败:', err)
@@ -403,7 +418,7 @@ const toggleSftpPanel = () => {
 
 // 连接SFTP
 const connectSftp = async () => {
-  const conn = terminalStore.currentConnection
+  const conn = props.connectionInfo
   if (!conn) {
     console.error('没有可用的连接信息')
     return
@@ -456,10 +471,10 @@ const copyFromContextMenu = async () => {
 }
 
 const pasteFromContextMenu = async () => {
-  if (term && terminalStore.isConnected) {
+  if (term && isConnected.value && socket) {
     try {
       const text = await navigator.clipboard.readText()
-      terminalStore.sendInput(text)
+      socket.emit('ssh-input', text)
       hideContextMenu()
     } catch (error) {
       console.warn('粘贴失败:', error)
@@ -508,14 +523,13 @@ const copySelected = async () => {
 const pasteFromClipboard = async () => {
   try {
     const text = await navigator.clipboard.readText()
-    if (text) {
-      terminalStore.sendInput(text)
+    if (text && isConnected.value && socket) {
+      socket.emit('ssh-input', text)
     }
   } catch (e) {}
 }
 
 const resetConnectedState = () => {
-  terminalStore.clearOutput()
   if (term) {
     term.reset()
     term.focus()
@@ -530,63 +544,76 @@ const resetConnectedState = () => {
   }
 }
 
-// 监听终端输出变化
-watch(() => terminalStore.terminalOutput, (newOutput, oldOutput) => {
-  if (term && terminalStore.isConnected && newOutput !== oldOutput) {
-    const newData = newOutput.slice(oldOutput.length)
-    if (newData) {
-      term.write(newData)
-      if (newData.includes('\x1b[H') && newData.includes('\x1b[2J')) {
-        resetConnectedState()
-      } else {
-        if (terminalStore.scrollOnUserInput) {
-          term.scrollToBottom()
-        }
-      }
+// 连接到服务器的新逻辑
+const connectToServer = () => {
+  isConnecting.value = true
+  connectionError.value = null
+  
+  socket = io({
+    auth: { token: authStore.token }
+  })
+  
+  socket.on('connect', () => {
+    socket.emit('authenticate', authStore.token)
+  })
+  
+  socket.on('authenticated', (data) => {
+    if (data.success) {
+      socket.emit('quick-connect', props.connectionInfo)
+    } else {
+      handleError('认证失败')
     }
-  }
-})
-
-// 监听服务器连接状态变化
-watch(() => terminalStore.isConnected, (isConnected, wasConnected) => {
-  if (term) {
-    if (isConnected && !wasConnected) {
+  })
+  
+  socket.on('connect_error', (err) => {
+    handleError(err.message || '连接失败')
+  })
+  
+  socket.on('ssh-connected', () => {
+    isConnected.value = true
+    isConnecting.value = false
+    if (term) {
       term.clear()
       term.focus()
-      
       setTimeout(() => {
-        term.write('\x1b[?25h')
-        
-        if (typeof term.scrollToTop === 'function') {
-          term.scrollToTop()
-        }
-        
-        const viewport = terminalRef.value?.querySelector('.xterm-viewport')
-        if (viewport) {
-          initialScrollTop = 0
-          viewport.scrollTop = 0
-          
-          setTimeout(() => {
-            viewport.scrollTop = 0
-          }, 50)
-        }
-      }, 100)
-    } else if (!isConnected && wasConnected) {
-      term.write('\r\n\x1b[31mSSH连接已断开\x1b[0m\r\n')
-      
-      sftpStore.disconnectSftp()
-      showSftp.value = false
+        handleResize()
+      }, 200)
     }
-    setTimeout(() => { handleResize() }, 150)
-  }
-})
+  })
+  
+  socket.on('ssh-data', (data) => {
+    if (term) {
+      term.write(typeof data === 'string' ? data : String(data))
+    }
+  })
+  
+  socket.on('ssh-error', (data) => {
+    handleError(data.error)
+  })
+  
+  socket.on('ssh-closed', () => {
+    isConnected.value = false
+    isConnecting.value = false
+    sftpStore.disconnectSftp()
+    showSftp.value = false
+    if (term) {
+      term.write('\r\n\x1b[31mSSH连接已断开\x1b[0m\r\n')
+    }
+  })
+  
+  socket.on('disconnect', () => {
+    isConnected.value = false
+    isConnecting.value = false
+  })
+}
 
-// 监听连接错误
-watch(() => terminalStore.connectionError, (error) => {
-  if (term && error) {
-    term.write(`\r\n\x1b[31m连接错误: ${error}\x1b[0m\r\n`)
+const handleError = (msg) => {
+  isConnecting.value = false
+  connectionError.value = msg
+  if (term) {
+    term.write(`\r\n\x1b[31m连接错误: ${msg}\x1b[0m\r\n`)
   }
-})
+}
 
 // 监听窗口大小变化
 const handleResize = () => {
@@ -598,12 +625,14 @@ const handleResize = () => {
       // 故意减少 1 行，在底部留出真实的换行空间，避免贴底
       const adjustedRows = Math.max(1, dimensions.rows - 1)
       
-      terminalStore.resizeTerminal({
-        rows: adjustedRows,
-        cols: dimensions.cols,
-        height: dimensions.height,
-        width: dimensions.width
-      })
+      if (isConnected.value && socket) {
+        socket.emit('resize', {
+          rows: adjustedRows,
+          cols: dimensions.cols,
+          height: dimensions.height,
+          width: dimensions.width
+        })
+      }
       
       term.resize(dimensions.cols, adjustedRows)
     }
@@ -617,31 +646,18 @@ onMounted(async () => {
   window.addEventListener('resize', handleResize)
   document.addEventListener('click', onDocumentClick)
   
-  // 快速连接模式：连接已由 QuickConnect.vue 发起
-  // 如果连接已建立且有缓冲输出，立即写入终端
-  await nextTick()
-  
-  if (terminalStore.isConnected && term) {
-    // 已连接：显示欢迎信息
-    term.clear()
-    
-    // 写入已缓冲的输出数据
-    if (terminalStore.terminalOutput) {
-      term.write(terminalStore.terminalOutput)
-    }
-    
-    // 发送 resize 触发服务器重新绘制（关键：让远程 shell 发送完整的提示符）
-    setTimeout(() => {
-      handleResize()
-      term.focus()
-    }, 200)
-  } else if (terminalStore.isConnecting && term) {
-    term.write('\x1b[33m正在连接服务器...\x1b[0m\r\n')
+  if (term) {
+    term.write('\x1b[33m正在初始化连接...\x1b[0m\r\n')
   }
+  
+  connectToServer()
 })
 
 onUnmounted(() => {
-  terminalStore.disconnectSocket()
+  if (socket) {
+    socket.disconnect()
+    socket = null
+  }
   sftpStore.disconnectSftp()
   if (term) {
     term.dispose()

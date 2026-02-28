@@ -203,8 +203,9 @@ const HISTORY_KEY = 'webssh_quick_connect_history'
 const MAX_HISTORY = 20
 
 const router = useRouter()
-const terminalStore = useTerminalStore()
 const authStore = useAuthStore()
+
+const emit = defineEmits(['connect'])
 
 const connectForm = ref()
 const fileInput = ref()
@@ -487,16 +488,6 @@ const handleConnect = async () => {
     connecting.value = true
     connectionError.value = ''
 
-    if (!terminalStore.socket) {
-      try {
-        await terminalStore.connectSocket(authStore.token)
-      } catch (error) {
-        connecting.value = false
-        connectionError.value = 'Socket连接失败: ' + error.message
-        return
-      }
-    }
-
     saveToHistory()
     
     const connectionInfo = {
@@ -512,14 +503,12 @@ const handleConnect = async () => {
       connectionInfo.privateKey = form.privateKey
     }
     
-    terminalStore.quickConnect(connectionInfo)
-    
+    emit('connect', connectionInfo)
     connecting.value = false
-    router.push('/quick-connect/terminal')
     
   } catch (error) {
     connecting.value = false
-    ElMessage.error('连接失败，请重试')
+    ElMessage.error('连接准备失败，请重试')
   }
 }
 
