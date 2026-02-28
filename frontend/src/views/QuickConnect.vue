@@ -18,16 +18,40 @@
         <el-aside class="history-aside" width="300px">
           <div class="aside-header">
             <span class="aside-title">连接历史</span>
-            <el-button 
-              v-if="historyList.length > 0"
-              type="danger" 
-              size="small" 
-              text 
-              @click="clearAllHistory"
-            >
-              <el-icon><Delete /></el-icon>
-              清空
-            </el-button>
+            <div class="aside-actions">
+              <el-tooltip content="导入" placement="top">
+                <el-button size="small" text @click="triggerImport">
+                  <el-icon><Upload /></el-icon>
+                </el-button>
+              </el-tooltip>
+              <el-tooltip content="导出" placement="top">
+                <el-button 
+                  size="small" 
+                  text
+                  :disabled="historyList.length === 0"
+                  @click="exportHistory"
+                >
+                  <el-icon><Download /></el-icon>
+                </el-button>
+              </el-tooltip>
+              <el-button 
+                v-if="historyList.length > 0"
+                type="danger" 
+                size="small" 
+                text 
+                @click="clearAllHistory"
+              >
+                <el-icon><Delete /></el-icon>
+                清空
+              </el-button>
+            </div>
+            <input 
+              ref="fileInput" 
+              type="file" 
+              accept=".json" 
+              style="display: none;" 
+              @change="handleImportFile" 
+            />
           </div>
 
           <div v-if="historyList.length > 0" class="history-tree">
@@ -182,7 +206,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Connection, Delete, Close, Monitor, Lock, Folder } from '@element-plus/icons-vue'
+import { ArrowLeft, Connection, Delete, Close, Monitor, Lock, Folder, Upload, Download } from '@element-plus/icons-vue'
 import { useTerminalStore } from '@/stores/terminal'
 import { useAuthStore } from '@/stores/auth'
 
@@ -194,6 +218,7 @@ const terminalStore = useTerminalStore()
 const authStore = useAuthStore()
 
 const connectForm = ref()
+const fileInput = ref()
 const connecting = ref(false)
 const connectionError = ref('')
 const savePassword = ref(false)
@@ -385,6 +410,77 @@ const clearAllHistory = () => {
   }).catch(() => {})
 }
 
+// ========== 导出 / 导入 ==========
+
+const exportHistory = () => {
+  const data = JSON.stringify(historyList.value, null, 2)
+  const blob = new Blob([data], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `webssh_quick_connect_${new Date().toISOString().slice(0, 10)}.json`
+  a.click()
+  URL.revokeObjectURL(url)
+  ElMessage.success(`已导出 ${historyList.value.length} 条连接记录`)
+}
+
+const triggerImport = () => {
+  fileInput.value?.click()
+}
+
+const handleImportFile = (event) => {
+  const file = event.target.files?.[0]
+  if (!file) return
+
+  const reader = new FileReader()
+  reader.onload = (e) => {
+    try {
+      const imported = JSON.parse(e.target.result)
+
+      if (!Array.isArray(imported)) {
+        ElMessage.error('文件格式错误：需要 JSON 数组')
+        return
+      }
+
+      // 验证每条记录必须有 host 和 username
+      const valid = imported.filter(item => item.host && item.username)
+      if (valid.length === 0) {
+        ElMessage.error('未找到有效的连接记录')
+        return
+      }
+
+      // 合并：按 host+port+username 去重，导入的覆盖旧的
+      let merged = [...historyList.value]
+      let addedCount = 0
+      valid.forEach(item => {
+        const idx = merged.findIndex(
+          h => h.host === item.host && h.port === item.port && h.username === item.username
+        )
+        if (idx !== -1) {
+          merged.splice(idx, 1)
+        }
+        addedCount++
+        merged.unshift(item)
+      })
+
+      // 限制最大条数
+      if (merged.length > MAX_HISTORY) {
+        merged = merged.slice(0, MAX_HISTORY)
+      }
+
+      historyList.value = merged
+      persistHistory()
+      ElMessage.success(`成功导入 ${addedCount} 条连接记录`)
+    } catch {
+      ElMessage.error('文件解析失败，请确认是有效的 JSON 文件')
+    }
+  }
+  reader.readAsText(file)
+
+  // 清空 input 以便重复选择同一文件
+  event.target.value = ''
+}
+
 // ========== 连接逻辑 ==========
 
 const handleConnect = async () => {
@@ -505,6 +601,12 @@ onMounted(() => {
   font-size: 15px;
   font-weight: 600;
   color: #303133;
+}
+
+.aside-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 
 .history-tree {
