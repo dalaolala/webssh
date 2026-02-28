@@ -1,17 +1,6 @@
 <template>
   <div class="quick-connect-page">
     <el-container class="quick-connect-container">
-      <!-- 顶部工具栏 -->
-      <el-header class="quick-connect-header">
-        <div class="header-left">
-          <el-button @click="$router.push('/dashboard')" size="small">
-            <el-icon><ArrowLeft /></el-icon>
-            返回
-          </el-button>
-          <span class="page-title">快速连接</span>
-        </div>
-      </el-header>
-      
       <!-- 主内容区域：左侧历史树 + 右侧表单 -->
       <el-container class="main-body">
         <!-- 左侧：连接历史树 -->
@@ -526,7 +515,7 @@ const handleConnect = async () => {
     terminalStore.quickConnect(connectionInfo)
     
     connecting.value = false
-    router.push('/quick-connect-terminal')
+    router.push('/quick-connect/terminal')
     
   } catch (error) {
     connecting.value = false
@@ -541,7 +530,7 @@ onMounted(() => {
 
 <style scoped>
 .quick-connect-page {
-  height: 100vh;
+  height: 100%;
   background-color: #f0f2f5;
 }
 
@@ -549,27 +538,6 @@ onMounted(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-}
-
-.quick-connect-header {
-  background: white;
-  border-bottom: 1px solid #e4e7ed;
-  display: flex;
-  align-items: center;
-  padding: 0 20px;
-  flex-shrink: 0;
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.page-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: #333;
 }
 
 /* 主体布局 */

@@ -34,15 +34,20 @@ const routes = [
   },
   {
     path: '/quick-connect',
-    name: 'QuickConnect',
-    component: () => import('@/views/QuickConnect.vue'),
-    meta: { requiresAuth: true }
-  },
-  {
-    path: '/quick-connect-terminal',
-    name: 'QuickConnectTerminal',
-    component: () => import('@/views/QuickConnectTerminal.vue'),
-    meta: { requiresAuth: true }
+    component: () => import('@/views/QuickConnectLayout.vue'),
+    meta: { requiresAuth: true },
+    children: [
+      {
+        path: '',
+        name: 'QuickConnect',
+        component: () => import('@/views/QuickConnect.vue')
+      },
+      {
+        path: 'terminal',
+        name: 'QuickConnectTerminal',
+        component: () => import('@/views/QuickConnectTerminal.vue')
+      }
+    ]
   },
   {
     path: '/terminal-new',

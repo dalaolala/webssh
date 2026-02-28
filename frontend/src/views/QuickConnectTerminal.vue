@@ -1,18 +1,6 @@
 <template>
   <div class="terminal-page">
     <el-container class="terminal-container">
-      <!-- 顶部工具栏 -->
-      <el-header class="terminal-header" height="36px">
-        <div class="header-left">
-          <el-button @click="goBack" size="small" text style="color: #ccc;">
-            <el-icon><ArrowLeft /></el-icon>
-            返回
-          </el-button>
-          <span class="server-name">{{ serverTitle }}</span>
-          <span class="server-info">{{ connectionDisplay }}</span>
-        </div>
-      </el-header>
-      
       <!-- 主内容区域 -->
       <el-container class="main-content">
         <!-- SFTP文件管理器侧边栏 -->
@@ -531,7 +519,6 @@ const resetConnectedState = () => {
   if (term) {
     term.reset()
     term.focus()
-    term.write('\x1b[32mSSH连接已建立，可以开始输入命令\x1b[0m\r\n\r\n')
     term.write('\x1b[?25h')
     if (typeof term.scrollToTop === 'function') {
       term.scrollToTop()
@@ -568,8 +555,6 @@ watch(() => terminalStore.isConnected, (isConnected, wasConnected) => {
       term.focus()
       
       setTimeout(() => {
-        term.write('\x1b[32mSSH连接已建立，可以开始输入命令\x1b[0m\r\n\r\n')
-        
         term.write('\x1b[?25h')
         
         if (typeof term.scrollToTop === 'function') {
@@ -605,17 +590,22 @@ watch(() => terminalStore.connectionError, (error) => {
 
 // 监听窗口大小变化
 const handleResize = () => {
-  if (fitAddon) {
+  if (fitAddon && term) {
     fitAddon.fit()
     
     const dimensions = fitAddon.proposeDimensions()
     if (dimensions) {
+      // 故意减少 1 行，在底部留出真实的换行空间，避免贴底
+      const adjustedRows = Math.max(1, dimensions.rows - 1)
+      
       terminalStore.resizeTerminal({
-        rows: dimensions.rows,
+        rows: adjustedRows,
         cols: dimensions.cols,
         height: dimensions.height,
         width: dimensions.width
       })
+      
+      term.resize(dimensions.cols, adjustedRows)
     }
   }
 }
@@ -634,7 +624,6 @@ onMounted(async () => {
   if (terminalStore.isConnected && term) {
     // 已连接：显示欢迎信息
     term.clear()
-    term.write('\x1b[32mSSH连接已建立，可以开始输入命令\x1b[0m\r\n\r\n')
     
     // 写入已缓冲的输出数据
     if (terminalStore.terminalOutput) {
@@ -676,6 +665,8 @@ onUnmounted(() => {
   height: 100vh;
   overflow: hidden;
   background-color: #1e1e1e;
+  display: flex;
+  flex-direction: column;
 }
 
 .terminal-container {
@@ -770,18 +761,19 @@ onUnmounted(() => {
   padding: 0 !important;
   position: relative;
   transition: width 0.3s ease;
-  height: 100%;
-  min-height: 400px;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
 }
 
 .terminal {
+  flex: 1;
   width: 100%;
-  height: 100%;
+  min-height: 0;
   padding: 0;
-  padding-bottom: 8px;
+  padding-bottom: 8px; /* 轻微底部间隙 */
   cursor: text;
   overflow: hidden;
   position: relative;
@@ -907,6 +899,14 @@ onUnmounted(() => {
 
 :deep(.xterm-screen) {
   background-color: #1e1e1e !important;
+}
+
+/* 强制在 xterm-screen 后方追加一段空白，确保滚动到底部时有足够间距 */
+:deep(.xterm-screen::after) {
+  content: "";
+  display: block;
+  height: 32px;
+  width: 100%;
 }
 
 :deep(.xterm-helper-textarea) {
