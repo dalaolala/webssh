@@ -140,7 +140,7 @@
                 <div class="feature-card" @click="$router.push('/quick-connect')" style="cursor: pointer;">
                   <el-icon size="48" color="#F56C6C"><Connection /></el-icon>
                   <h3>快速连接</h3>
-                  <p>无需保存服务器信息，快速建立SSH连接</p>
+                  <p>服务器信息保存在本地，支持导入导出</p>
                 </div>
               </el-col>
             </el-row>

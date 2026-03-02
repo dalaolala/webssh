@@ -48,9 +48,11 @@
               :data="treeData"
               :props="treeProps"
               node-key="id"
-              default-expand-all
+              :default-expanded-keys="expandedHistoryKeys"
               highlight-current
               @node-click="handleTreeNodeClick"
+              @node-expand="handleNodeExpand"
+              @node-collapse="handleNodeCollapse"
             >
               <template #default="{ node, data }">
                 <div class="tree-node" :class="{ 'is-leaf': data.isLeaf }">
@@ -106,6 +108,24 @@
               <el-form :model="form" :rules="rules" ref="connectForm" label-width="100px">
                 <el-form-item label="服务器名称" prop="name">
                   <el-input v-model="form.name" placeholder="请输入服务器名称（可选）" />
+                </el-form-item>
+
+                <el-form-item label="所属分组" prop="group">
+                  <el-select
+                    v-model="form.group"
+                    filterable
+                    allow-create
+                    default-first-option
+                    placeholder="请输入或选择分组名称（可选）"
+                    style="width: 100%"
+                  >
+                    <el-option
+                      v-for="item in availableGroups"
+                      :key="item"
+                      :label="item"
+                      :value="item"
+                    />
+                  </el-select>
                 </el-form-item>
                 
                 <el-form-item label="主机地址" prop="host">
@@ -211,7 +231,6 @@ import { useTerminalStore } from '@/stores/terminal'
 import { useAuthStore } from '@/stores/auth'
 
 const HISTORY_KEY = 'webssh_quick_connect_history'
-const MAX_HISTORY = 20
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -227,6 +246,7 @@ const historyList = ref([])
 
 const form = reactive({
   name: '',
+  group: '',
   host: '',
   port: 22,
   username: '',
@@ -272,19 +292,30 @@ const rules = {
   ]
 }
 
-// ========== 树形数据 ==========
+// ========== 树形数据 & 分组下拉 ==========
+
+// 提取历史记录中出现过的所有分组（去重）
+const availableGroups = computed(() => {
+  const groups = new Set()
+  historyList.value.forEach(item => {
+    if (item.group) {
+      groups.add(item.group)
+    }
+  })
+  return Array.from(groups).sort()
+})
 
 const treeProps = {
   children: 'children',
   label: 'label'
 }
 
-// 将 historyList 转换为树形结构，按主机地址分组
+// 将 historyList 转换为树形结构，按分组名称分组
 const treeData = computed(() => {
   const groups = {}
   
   historyList.value.forEach((item, index) => {
-    const groupKey = item.host
+    const groupKey = item.group || '未分组'
     if (!groups[groupKey]) {
       groups[groupKey] = {
         id: `group-${groupKey}`,
@@ -313,6 +344,24 @@ const handleTreeNodeClick = (data) => {
   }
 }
 
+// ========== 分组展开状态持久化 (sessionStorage) ==========
+const EXPANDED_HISTORY_KEYS_KEY = 'webssh_quick_connect_expanded_keys'
+const expandedHistoryKeys = ref(JSON.parse(sessionStorage.getItem(EXPANDED_HISTORY_KEYS_KEY) || '[]'))
+
+const handleNodeExpand = (data) => {
+  if (!data.isLeaf && !expandedHistoryKeys.value.includes(data.id)) {
+    expandedHistoryKeys.value.push(data.id)
+    sessionStorage.setItem(EXPANDED_HISTORY_KEYS_KEY, JSON.stringify(expandedHistoryKeys.value))
+  }
+}
+
+const handleNodeCollapse = (data) => {
+  if (!data.isLeaf) {
+    expandedHistoryKeys.value = expandedHistoryKeys.value.filter(id => id !== data.id)
+    sessionStorage.setItem(EXPANDED_HISTORY_KEYS_KEY, JSON.stringify(expandedHistoryKeys.value))
+  }
+}
+
 // ========== 历史记录管理 ==========
 
 const loadHistory = () => {
@@ -331,6 +380,7 @@ const persistHistory = () => {
 const saveToHistory = () => {
   const record = {
     name: form.name || '',
+    group: form.group || '',
     host: form.host,
     port: form.port,
     username: form.username,
@@ -356,15 +406,12 @@ const saveToHistory = () => {
 
   historyList.value.unshift(record)
 
-  if (historyList.value.length > MAX_HISTORY) {
-    historyList.value = historyList.value.slice(0, MAX_HISTORY)
-  }
-
   persistHistory()
 }
 
 const fillFromHistory = (item) => {
   form.name = item.name || ''
+  form.group = item.group || ''
   form.host = item.host
   form.port = item.port
   form.username = item.username
@@ -463,11 +510,6 @@ const handleImportFile = (event) => {
         addedCount++
         merged.unshift(item)
       })
-
-      // 限制最大条数
-      if (merged.length > MAX_HISTORY) {
-        merged = merged.slice(0, MAX_HISTORY)
-      }
 
       historyList.value = merged
       persistHistory()
