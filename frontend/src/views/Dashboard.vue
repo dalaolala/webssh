@@ -57,9 +57,11 @@
           <el-tree
             :data="serverTree"
             node-key="id"
-            default-expand-all
+            :default-expanded-keys="expandedKeys"
             :expand-on-click-node="false"
             @node-click="handleServerClick"
+            @node-expand="handleNodeExpand"
+            @node-collapse="handleNodeCollapse"
           >
             <template #default="{ node, data }">
               <div class="tree-node">
@@ -181,6 +183,26 @@ const showAddServerDialog = ref(false)
 const showEditServerDialog = ref(false)
 const editingServerId = ref(null)
 const editingServerName = ref('')
+
+// 分组展开状态持久化 (sessionStorage)
+const EXPANDED_KEYS_STORAGE_KEY = 'webssh_dashboard_expanded_keys'
+const expandedKeys = ref(JSON.parse(sessionStorage.getItem(EXPANDED_KEYS_STORAGE_KEY) || '[]'))
+
+// 监听分组展开
+const handleNodeExpand = (data) => {
+  if (data.type === 'group' && !expandedKeys.value.includes(data.id)) {
+    expandedKeys.value.push(data.id)
+    sessionStorage.setItem(EXPANDED_KEYS_STORAGE_KEY, JSON.stringify(expandedKeys.value))
+  }
+}
+
+// 监听分组折叠
+const handleNodeCollapse = (data) => {
+  if (data.type === 'group') {
+    expandedKeys.value = expandedKeys.value.filter(id => id !== data.id)
+    sessionStorage.setItem(EXPANDED_KEYS_STORAGE_KEY, JSON.stringify(expandedKeys.value))
+  }
+}
 
 // 计算服务器树形数据
 const serverTree = computed(() => {
