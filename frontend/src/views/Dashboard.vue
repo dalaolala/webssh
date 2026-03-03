@@ -145,6 +145,14 @@
               </el-col>
             </el-row>
           </div>
+
+          <div class="quick-connect-only-banner" style="margin-top: 30px; text-align: center;">
+            <el-button type="warning" plain size="large" @click="enableQuickConnectOnly">
+              <el-icon><Connection /></el-icon>
+              进入仅开启快速连接模式
+            </el-button>
+            <p style="color: #999; font-size: 13px; margin-top: 10px;">在此模式下，系统将隐藏分组、用户等其他功能页面，登录后直达快速连接面板。</p>
+          </div>
         </div>
       </el-main>
     </el-container>
@@ -320,6 +328,13 @@ const handleUserCommand = async (command) => {
       }
     }
   }
+}
+
+// 仅快速连接模式
+const enableQuickConnectOnly = () => {
+  localStorage.setItem('webssh_quick_connect_only', 'true')
+  ElMessage.success('已进入仅开启快速连接模式')
+  router.push('/quick-connect')
 }
 
 onMounted(async () => {

@@ -77,15 +77,19 @@ const router = createRouter({
 // 路由守卫
 router.beforeEach((to, from, next) => {
   const authStore = useAuthStore()
+  const isQuickConnectOnly = localStorage.getItem('webssh_quick_connect_only') === 'true'
 
   // 检查是否需要认证
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
     next('/login')
   } else if (to.meta.requiresGuest && authStore.isAuthenticated) {
-    next('/dashboard')
+    next(isQuickConnectOnly ? '/quick-connect' : '/dashboard')
   } else if (to.meta.requiresAdmin && (!authStore.isAuthenticated || !authStore.user?.is_admin)) {
     // 检查管理员权限
-    next('/dashboard')
+    next(isQuickConnectOnly ? '/quick-connect' : '/dashboard')
+  } else if (isQuickConnectOnly && to.path !== '/login' && to.path !== '/register' && !to.path.startsWith('/quick-connect')) {
+    // 如果是仅快速连接模式，且目标路由不是快速连接相关、也不是登录注册，拦截并跳转
+    next('/quick-connect')
   } else {
     next()
   }

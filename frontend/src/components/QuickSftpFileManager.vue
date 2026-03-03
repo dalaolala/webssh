@@ -31,7 +31,18 @@
       </div>
       
       <div class="path-display">
-        <span>当前路径: {{ currentPath }}</span>
+        <span>当前路径:</span>
+        <el-input 
+          v-model="inputPath" 
+          placeholder="输入目录路径并回车" 
+          @keyup.enter="handlePathEnter"
+          size="small"
+          style="width: 300px; margin-left: 10px;"
+        >
+          <template #append>
+            <el-button @click="handlePathEnter"><el-icon><Right /></el-icon></el-button>
+          </template>
+        </el-input>
       </div>
     </div>
 
@@ -76,6 +87,14 @@
           </div>
           
           <div class="file-actions">
+            <el-button 
+              v-if="file.type === 'file'" 
+              size="small" 
+              type="primary" 
+              @click.stop="handleEditFile(file)"
+            >
+              编辑
+            </el-button>
             <el-button 
               v-if="file.type === 'file'" 
               size="small" 
@@ -139,22 +158,29 @@
           <span>正在编辑: {{ editFile.path }}</span>
           <el-button type="primary" @click="handleSaveEdit">保存</el-button>
         </div>
-        <textarea 
-          v-model="editFile.content" 
-          class="file-editor"
-          placeholder="文件内容..."
-        ></textarea>
+        <vue-monaco-editor
+          v-model:value="editFile.content"
+          theme="vs-dark"
+          :language="getLanguage(editFile.path)"
+          :options="{
+            automaticLayout: true,
+            fontSize: 14,
+            minimap: { enabled: false }
+          }"
+          class="file-editor-monaco"
+        />
       </div>
     </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, computed, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
+import { VueMonacoEditor } from '@guolao/vue-monaco-editor';
 import { 
   ArrowUp, Refresh, FolderAdd, Upload, Delete, Loading, 
-  Folder, Document 
+  Folder, Document, Right
 } from '@element-plus/icons-vue'
 
 const props = defineProps({
@@ -193,6 +219,13 @@ const loading = computed(() => props.sftp.loading.value);
 const error = computed(() => props.sftp.error.value);
 const selectedFiles = computed(() => props.sftp.selectedFiles.value);
 
+const inputPath = ref(currentPath.value);
+
+// 当 currentPath 变化时，自动更新输入框中的路径
+watch(currentPath, (newVal) => {
+  inputPath.value = newVal;
+});
+
 // 方法
 const refreshDirectory = async () => {
   await props.sftp.listDirectory(currentPath.value);
@@ -200,6 +233,28 @@ const refreshDirectory = async () => {
 
 const goToParentDirectory = async () => {
   await props.sftp.goToParentDirectory();
+};
+
+const handlePathEnter = async () => {
+  const target = inputPath.value.trim();
+  if (!target) {
+    ElMessage.warning('请输入有效路径');
+    return;
+  }
+  
+  if (target === currentPath.value) {
+    await refreshDirectory(); // 路径没变时相当于刷新
+    return;
+  }
+
+  try {
+    // 假设 listDirectory 能够处理绝对路径并进入
+    await props.sftp.listDirectory(target);
+  } catch (err) {
+    ElMessage.error('无法进入该目录: ' + err.message);
+    // 回退到原来的路径显示
+    inputPath.value = currentPath.value;
+  }
 };
 
 const handleFileClick = (file) => {
@@ -210,17 +265,34 @@ const handleFileDoubleClick = async (file) => {
   if (file.type === 'directory') {
     await props.sftp.enterDirectory(file.name);
   } else {
-    try {
-      const content = await props.sftp.readFile(file.path);
-      editFile.value = {
-        path: file.path,
-        content: content
-      };
-      showEditDialog.value = true;
-    } catch (err) {
-      ElMessage.error('读取文件失败: ' + err.message);
-    }
+    handleEditFile(file);
   }
+};
+
+const handleEditFile = async (file) => {
+  try {
+    const content = await props.sftp.readFile(file.path);
+    editFile.value = {
+      path: file.path,
+      content: content
+    };
+    showEditDialog.value = true;
+  } catch (err) {
+    ElMessage.error('读取文件失败: ' + err.message);
+  }
+};
+
+const getLanguage = (path) => {
+  if (!path) return 'plaintext';
+  const ext = path.split('.').pop().toLowerCase();
+  const map = {
+    js: 'javascript', ts: 'typescript', vue: 'html', html: 'html', css: 'css',
+    json: 'json', py: 'python', java: 'java', c: 'c', cpp: 'cpp', 
+    md: 'markdown', txt: 'plaintext', sh: 'shell', yaml: 'yaml', yml: 'yaml',
+    conf: 'ini', ini: 'ini', xml: 'xml', sql: 'sql', php: 'php', rb: 'ruby',
+    go: 'go', rs: 'rust', pb: 'protobuf'
+  };
+  return map[ext] || 'plaintext';
 };
 
 const handleDownload = async (file) => {
@@ -405,6 +477,8 @@ onMounted(() => {
   margin-left: auto;
   color: #666;
   font-size: 14px;
+  display: flex;
+  align-items: center;
 }
 
 .file-list-container {
@@ -500,18 +574,8 @@ onMounted(() => {
   align-items: center;
 }
 
-.file-editor {
+.file-editor-monaco {
   flex: 1;
-  border: 1px solid #e4e7ed;
-  border-radius: 4px;
-  padding: 10px;
-  font-family: 'Courier New', monospace;
-  font-size: 14px;
-  resize: none;
-  outline: none;
-}
-
-.file-editor:focus {
-  border-color: #409eff;
+  min-height: 0;
 }
 </style>

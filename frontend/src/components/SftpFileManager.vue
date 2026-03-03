@@ -80,6 +80,14 @@
             <el-button 
               v-if="file.type === 'file'" 
               size="small" 
+              type="primary" 
+              @click.stop="handleEditFile(file)"
+            >
+              编辑
+            </el-button>
+            <el-button 
+              v-if="file.type === 'file'" 
+              size="small" 
               @click.stop="handleDownload(file)"
             >
               下载
@@ -140,11 +148,17 @@
           <span>正在编辑: {{ editFile.path }}</span>
           <el-button type="primary" @click="handleSaveEdit">保存</el-button>
         </div>
-        <textarea 
-          v-model="editFile.content" 
-          class="file-editor"
-          placeholder="文件内容..."
-        ></textarea>
+        <vue-monaco-editor
+          v-model:value="editFile.content"
+          theme="vs-dark"
+          :language="getLanguage(editFile.path)"
+          :options="{
+            automaticLayout: true,
+            fontSize: 14,
+            minimap: { enabled: false }
+          }"
+          class="file-editor-monaco"
+        />
       </div>
     </el-dialog>
   </div>
@@ -154,6 +168,7 @@
 import { ref, onMounted, nextTick, computed } from 'vue';
 import { useSftpStore } from '../stores/sftp';
 import { ElMessage, ElMessageBox } from 'element-plus';
+import { VueMonacoEditor } from '@guolao/vue-monaco-editor';
 
 const sftpStore = useSftpStore();
 const fileInput = ref(null);
@@ -202,18 +217,34 @@ const handleFileDoubleClick = async (file) => {
   if (file.type === 'directory') {
     await sftpStore.enterDirectory(file.name);
   } else {
-    // 打开文件编辑
-    try {
-      const content = await sftpStore.readFile(file.path);
-      editFile.value = {
-        path: file.path,
-        content: content
-      };
-      showEditDialog.value = true;
-    } catch (err) {
-      ElMessage.error('读取文件失败: ' + err.message);
-    }
+    handleEditFile(file);
   }
+};
+
+const handleEditFile = async (file) => {
+  try {
+    const content = await sftpStore.readFile(file.path);
+    editFile.value = {
+      path: file.path,
+      content: content
+    };
+    showEditDialog.value = true;
+  } catch (err) {
+    ElMessage.error('读取文件失败: ' + err.message);
+  }
+};
+
+const getLanguage = (path) => {
+  if (!path) return 'plaintext';
+  const ext = path.split('.').pop().toLowerCase();
+  const map = {
+    js: 'javascript', ts: 'typescript', vue: 'html', html: 'html', css: 'css',
+    json: 'json', py: 'python', java: 'java', c: 'c', cpp: 'cpp', 
+    md: 'markdown', txt: 'plaintext', sh: 'shell', yaml: 'yaml', yml: 'yaml',
+    conf: 'ini', ini: 'ini', xml: 'xml', sql: 'sql', php: 'php', rb: 'ruby',
+    go: 'go', rs: 'rust', pb: 'protobuf'
+  };
+  return map[ext] || 'plaintext';
 };
 
 const handleFileContextMenu = (event, file) => {
@@ -501,18 +532,8 @@ onMounted(() => {
   align-items: center;
 }
 
-.file-editor {
+.file-editor-monaco {
   flex: 1;
-  border: 1px solid #e4e7ed;
-  border-radius: 4px;
-  padding: 10px;
-  font-family: 'Courier New', monospace;
-  font-size: 14px;
-  resize: none;
-  outline: none;
-}
-
-.file-editor:focus {
-  border-color: #409eff;
+  min-height: 0;
 }
 </style>

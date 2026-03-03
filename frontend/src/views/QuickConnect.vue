@@ -43,11 +43,23 @@
             />
           </div>
 
+          <div class="history-search" v-if="historyList.length > 0">
+            <el-input
+              v-model="searchKeyword"
+              placeholder="搜索名称或IP..."
+              clearable
+              prefix-icon="Search"
+              size="small"
+            />
+          </div>
+
           <div v-if="historyList.length > 0" class="history-tree">
             <el-tree
+              ref="historyTreeRef"
               :data="treeData"
               :props="treeProps"
               node-key="id"
+              :filter-node-method="filterNode"
               :default-expanded-keys="expandedHistoryKeys"
               highlight-current
               @node-click="handleTreeNodeClick"
@@ -223,10 +235,10 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Connection, Delete, Close, Monitor, Lock, Folder, Upload, Download } from '@element-plus/icons-vue'
+import { ArrowLeft, Connection, Delete, Close, Monitor, Lock, Folder, Upload, Download, Search } from '@element-plus/icons-vue'
 import { useTerminalStore } from '@/stores/terminal'
 import { useAuthStore } from '@/stores/auth'
 import CryptoJS from 'crypto-js'
@@ -244,6 +256,9 @@ const connecting = ref(false)
 const connectionError = ref('')
 const savePassword = ref(false)
 const historyList = ref([])
+
+const searchKeyword = ref('')
+const historyTreeRef = ref()
 
 const form = reactive({
   name: '',
@@ -362,6 +377,22 @@ const handleNodeCollapse = (data) => {
     sessionStorage.setItem(EXPANDED_HISTORY_KEYS_KEY, JSON.stringify(expandedHistoryKeys.value))
   }
 }
+
+// ========== 搜索过滤功能 ==========
+const filterNode = (value, data) => {
+  if (!value) return true
+  if (data.type === 'group') return true // 保留分组节点，依靠子节点匹配来决定是否显示分组
+  
+  const searchLower = value.toLowerCase()
+  const nameMatch = (data.record?.name || '').toLowerCase().includes(searchLower)
+  const hostMatch = (data.record?.host || '').toLowerCase().includes(searchLower)
+  
+  return nameMatch || hostMatch
+}
+
+watch(searchKeyword, (val) => {
+  historyTreeRef.value?.filter(val)
+})
 
 // ========== 历史记录管理 ==========
 
@@ -647,6 +678,31 @@ onMounted(() => {
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  display: flex; /* Ensure the children (aside and main) flow correctly */
+}
+
+/* 左侧栏样式 */
+.history-aside {
+  background: white;
+  border-right: 1px solid #e4e7ed;
+  display: flex;
+  flex-direction: column;
+}
+
+.aside-header {
+  padding: 15px 20px;
+  border-bottom: 1px solid #ebeef5;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.history-search {
+  padding: 10px 20px;
+  border-bottom: 1px solid #ebeef5;
+}
+
+.aside-title {
 }
 
 /* 左侧历史树 */
