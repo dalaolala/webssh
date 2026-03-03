@@ -21,10 +21,10 @@ function getPublicKey() {
 
 function decryptPayload(encryptedAesKeyBase64, encryptedDataBase64) {
     if (!privateKey) throw new Error('Keys not initialized');
-    // 1. RSA 解密 AES 密钥
+    // 1. RSA 解密 AES 密钥 (使用 OAEP)
     const encryptedAesKeyBuffer = Buffer.from(encryptedAesKeyBase64, 'base64');
     const aesKeyStr = crypto.privateDecrypt(
-        { key: privateKey, padding: crypto.constants.RSA_PKCS1_PADDING },
+        { key: privateKey, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING },
         encryptedAesKeyBuffer
     ).toString('utf8');
 

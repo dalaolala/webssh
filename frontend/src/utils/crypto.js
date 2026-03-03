@@ -1,5 +1,5 @@
 import axios from 'axios';
-import JSEncrypt from 'jsencrypt';
+import forge from 'node-forge';
 import CryptoJS from 'crypto-js';
 
 let publicKeyCache = null;
@@ -39,11 +39,19 @@ export async function encryptPayload(data) {
         padding: CryptoJS.pad.Pkcs7
     }).toString(); // 自动输出 base64
 
-    // 3. 使用 RSA 加密 AES 密钥和 IV
-    const encryptor = new JSEncrypt();
-    encryptor.setPublicKey(pubKey);
+    // 3. 使用 RSA-OAEP 加密 AES 密钥和 IV
+    const publicKeyObj = forge.pki.publicKeyFromPem(pubKey);
     const sessionKeyObj = JSON.stringify({ key: aesKeyStr, iv: ivStr });
-    const encryptedKey = encryptor.encrypt(sessionKeyObj);
+
+    // forge 的 encrypt 默认使用 RSAES-PKCS1-V1_5，若需要 OAEP：
+    const encryptedKeyBytes = publicKeyObj.encrypt(sessionKeyObj, 'RSA-OAEP', {
+        md: forge.md.sha1.create(),
+        mgf1: {
+            md: forge.md.sha1.create()
+        }
+    });
+
+    const encryptedKey = forge.util.encode64(encryptedKeyBytes);
 
     if (!encryptedKey) {
         throw new Error('RSA 加密失败，可能是数据过长或公钥无效');
