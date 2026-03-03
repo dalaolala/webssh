@@ -1,5 +1,6 @@
 import { ref } from 'vue';
 import axios from 'axios';
+import { encryptPayload } from '../utils/crypto';
 
 // 这是一个组合式函数(Composable)而不是全局 Pinia Store
 // 这样每次调用 useQuickSftp() 都会生成完全独立的响应式状态，非常适合多标签页互不干扰。
@@ -18,13 +19,17 @@ export function useQuickSftp() {
             loading.value = true;
             error.value = null;
 
-            const response = await axios.post('/api/sftp/quick/connect', {
+            // 使用 RSA + AES 混合加密传输载荷
+            const rawPayload = {
                 host: connectionInfo.host,
                 port: connectionInfo.port,
                 username: connectionInfo.username,
                 password: connectionInfo.password,
                 privateKey: connectionInfo.privateKey
-            });
+            };
+            const secureData = await encryptPayload(rawPayload);
+
+            const response = await axios.post('/api/sftp/quick/connect', secureData);
 
             if (response.data.success) {
                 isConnected.value = true;

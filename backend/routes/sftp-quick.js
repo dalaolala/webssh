@@ -35,7 +35,23 @@ const sftpConnections = new Map();
 // 连接SFTP - 快速连接专属
 router.post('/connect', authenticateToken, async (req, res) => {
     try {
-        const { host, port, username, password, privateKey } = req.body;
+        let connectionInfo = req.body;
+
+        // 如果请求体包含 key 和 data，说明是加密传输
+        if (connectionInfo.key && connectionInfo.data) {
+            try {
+                const cryptoUtil = require('../utils/crypto');
+                connectionInfo = cryptoUtil.decryptPayload(connectionInfo.key, connectionInfo.data);
+            } catch (err) {
+                console.error('解密载荷失败:', err);
+                return res.status(400).json({
+                    success: false,
+                    message: '无效的加密数据结构'
+                });
+            }
+        }
+
+        const { host, port, username, password, privateKey } = connectionInfo;
         const userId = req.user.userId;
 
         if (!host || !username) {

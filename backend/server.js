@@ -19,6 +19,9 @@ const db = require('./config/database');
 // Socket handlers
 const socketHandler = require('./socket/socketHandler');
 
+// Utilities
+const cryptoUtil = require('./utils/crypto');
+
 // Load environment variables
 dotenv.config();
 
@@ -44,6 +47,11 @@ app.use('/api/sftp/quick', sftpQuickRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/admin', adminRoutes);
 
+// Crypto Endpoint
+app.get('/api/crypto/public-key', (req, res) => {
+  res.json({ publicKey: cryptoUtil.getPublicKey() });
+});
+
 // Socket.io connection handling
 socketHandler(io);
 
@@ -64,6 +72,10 @@ db.authenticate()
   .catch(err => {
     console.error('Unable to connect to the database:', err);
   });
+
+// Initialize RSA keys
+cryptoUtil.initKeys();
+console.log('RSA Keys initialized for secure payload transmission.');
 
 const PORT = process.env.PORT || 3000;
 httpServer.listen(PORT, () => {
