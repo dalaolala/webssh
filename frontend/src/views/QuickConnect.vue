@@ -37,7 +37,7 @@
             <input 
               ref="fileInput" 
               type="file" 
-              accept=".json" 
+              accept=".json,.enc" 
               style="display: none;" 
               @change="handleImportFile" 
             />
@@ -229,6 +229,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Connection, Delete, Close, Monitor, Lock, Folder, Upload, Download } from '@element-plus/icons-vue'
 import { useTerminalStore } from '@/stores/terminal'
 import { useAuthStore } from '@/stores/auth'
+import CryptoJS from 'crypto-js'
 
 const HISTORY_KEY = 'webssh_quick_connect_history'
 
@@ -458,18 +459,32 @@ const clearAllHistory = () => {
   }).catch(() => {})
 }
 
-// ========== 导出 / 导入 ==========
+// ========== 导入与导出 ==========
+
+const getEncryptionKey = () => {
+  const email = authStore.user?.email || 'default'
+  return `${email}2026webssh`
+}
 
 const exportHistory = () => {
-  const data = JSON.stringify(historyList.value, null, 2)
-  const blob = new Blob([data], { type: 'application/json' })
+  if (historyList.value.length === 0) {
+    ElMessage.warning('没有历史记录可导出')
+    return
+  }
+
+  const jsonStr = JSON.stringify(historyList.value, null, 2)
+  const key = getEncryptionKey()
+  // 对 JSON 字符串进行 AES 加密
+  const encryptedData = CryptoJS.AES.encrypt(jsonStr, key).toString()
+
+  const blob = new Blob([encryptedData], { type: 'text/plain' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `webssh_quick_connect_${new Date().toISOString().slice(0, 10)}.json`
+  a.download = `webssh_quick_connect_${new Date().toISOString().slice(0, 10)}.enc`
   a.click()
   URL.revokeObjectURL(url)
-  ElMessage.success(`已导出 ${historyList.value.length} 条连接记录`)
+  ElMessage.success(`已加密导出 ${historyList.value.length} 条连接记录`)
 }
 
 const triggerImport = () => {
@@ -481,9 +496,45 @@ const handleImportFile = (event) => {
   if (!file) return
 
   const reader = new FileReader()
-  reader.onload = (e) => {
+  reader.onload = async (e) => {
     try {
-      const imported = JSON.parse(e.target.result)
+      const fileContent = e.target.result
+      let key = getEncryptionKey()
+      
+      let jsonStr = ''
+      try {
+        const bytes = CryptoJS.AES.decrypt(fileContent, key)
+        jsonStr = bytes.toString(CryptoJS.enc.Utf8)
+        if (!jsonStr) throw new Error('Decryption empty')
+      } catch (err) {
+        // 第一轮使用当前用户邮箱解密失败，弹窗让用户输入导出时的邮箱
+        try {
+          const { value: inputEmail } = await ElMessageBox.prompt(
+            '当前账号解密失败。如果这是其他账号导出的文件，请输入导出该文件时的账号邮箱：', 
+            '需要提供原邮箱以解密', 
+            {
+              confirmButtonText: '确定解密',
+              cancelButtonText: '取消',
+              inputPattern: /[\w!#$%&'*+/=?^_`{|}~-]+(?:\.[\w!#$%&'*+/=?^_`{|}~-]+)*@(?:[\w](?:[\w-]*[\w])?\.)+[\w](?:[\w-]*[\w])?/,
+              inputErrorMessage: '邮箱格式不正确'
+            }
+          )
+          
+          key = `${inputEmail}2026webssh`
+          const newBytes = CryptoJS.AES.decrypt(fileContent, key)
+          jsonStr = newBytes.toString(CryptoJS.enc.Utf8)
+          
+          if (!jsonStr) throw new Error('Decryption empty second try')
+        } catch (promptErr) {
+          if (promptErr !== 'cancel') {
+            ElMessage.error('使用您提供的邮箱解密依然失败，文件可能已损坏或邮箱不正确')
+          }
+          event.target.value = ''
+          return
+        }
+      }
+
+      const imported = JSON.parse(jsonStr)
 
       if (!Array.isArray(imported)) {
         ElMessage.error('文件格式错误：需要 JSON 数组')
