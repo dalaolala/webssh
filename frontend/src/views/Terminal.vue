@@ -3,71 +3,16 @@
     <el-container class="terminal-container">
       <!-- 顶部工具栏 -->
       <el-header class="terminal-header">
-        <div class="header-left">
-          <el-button @click="$router.back()" size="small">
-            <el-icon><ArrowLeft /></el-icon>
-            返回
-          </el-button>
+        <div class="header-back" @click="$router.back()">
+          <span class="back-dot dot-red"></span>
+          <el-icon class="back-icon"><ArrowLeft /></el-icon>
+          <span class="back-text">返回</span>
+        </div>
+        <div class="header-title">
           <span class="server-name">{{ currentServer?.name || '快速连接' }}</span>
-          <span class="server-info">{{ currentServer?.host }}:{{ currentServer?.port }}</span>
+          <span class="server-host" v-if="currentServer">{{ currentServer.host }}:{{ currentServer.port }}</span>
         </div>
-        
-        <div class="header-right">
-          <!-- SFTP文件管理按钮 -->
-          <el-button 
-            v-if="terminalStore.isConnected"
-            size="small"
-            :type="showSftp ? 'primary' : 'default'"
-            @click="toggleSftpPanel"
-          >
-            <el-icon><Folder /></el-icon>
-            {{ showSftp ? '隐藏文件' : '文件管理' }}
-          </el-button>
-          
-          <el-button-group>
-            <el-button 
-              v-if="!terminalStore.isConnected && !terminalStore.isConnecting"
-              type="primary" 
-              size="small"
-              @click="connectToServer"
-            >
-              <el-icon><Connection /></el-icon>
-              连接
-            </el-button>
-            
-            <el-button 
-              v-if="terminalStore.isConnecting"
-              type="warning" 
-              size="small"
-              :loading="true"
-            >
-              连接中...
-            </el-button>
-            
-            <el-button 
-              v-if="terminalStore.isConnected"
-              type="danger" 
-              size="small"
-              @click="terminalStore.disconnect"
-            >
-              <el-icon><Close /></el-icon>
-              断开
-            </el-button>
-          </el-button-group>
-          
-          <el-button size="small" @click="clearTerminal">
-            <el-icon><Delete /></el-icon>
-            清屏
-          </el-button>
-          <el-button size="small" @click="copySelected" class="copy-button">
-            <el-icon><Document /></el-icon>
-            复制选中
-          </el-button>
-          <el-button size="small" @click="pasteFromClipboard">
-            <el-icon><Edit /></el-icon>
-            粘贴剪贴板
-          </el-button>
-        </div>
+        <div class="header-right-placeholder"></div>
       </el-header>
       
       <!-- 主内容区域 -->
@@ -174,23 +119,17 @@
       </el-container>
       
       <!-- 状态栏 -->
-      <el-footer class="terminal-footer" v-if="terminalStore.isConnected">
-        <div class="status-bar">
-          <span class="status-item">
-            <el-icon><Connection /></el-icon>
-            已连接
-          </span>
-          <span class="status-item">
-            <el-icon><Monitor /></el-icon>
-            {{ currentServer?.host }}:{{ currentServer?.port }}
-          </span>
-          <span class="status-item">
-            <el-icon><User /></el-icon>
-            {{ currentServer?.username }}
-          </span>
-        </div>
-      </el-footer>
+      <TerminalStatusBar 
+        :is-connected="terminalStore.isConnected"
+        :connection-display="currentServer ? `${currentServer.host}:${currentServer.port}` : ''"
+        :show-sftp="showSftp"
+        @toggle-sftp="toggleSftpPanel"
+        @show-commands="showCommands = true"
+      />
     </el-container>
+
+    <!-- 常用命令抽屉组件 -->
+    <CommandLibrary v-model="showCommands" @command="injectCommand" />
   </div>
 </template>
 
@@ -200,12 +139,16 @@ import { useRoute } from 'vue-router'
 import { Terminal } from 'xterm'
 import { FitAddon } from 'xterm-addon-fit'
 import { WebLinksAddon } from 'xterm-addon-web-links'
+import 'xterm/css/xterm.css'
 import { ArrowLeft, Connection, Close, Delete, Monitor, Folder, User, Document, Edit, DocumentCopy, DocumentAdd, Select } from '@element-plus/icons-vue'
 import { useTerminalStore } from '@/stores/terminal'
 import { useServersStore } from '@/stores/servers'
 import { useAuthStore } from '@/stores/auth'
 import { useSftpStore } from '@/stores/sftp'
 import SftpFileManager from '@/components/SftpFileManager.vue'
+import TerminalStatusBar from '@/components/TerminalStatusBar.vue'
+import CommandLibrary from '@/components/CommandLibrary.vue'
+import { ElMessage } from 'element-plus'
 
 const route = useRoute()
 const terminalStore = useTerminalStore()
@@ -217,6 +160,17 @@ const terminalRef = ref()
 const currentServer = ref(null)
 const showSftp = ref(false)
 const sftpPanelWidth = ref(350)
+const showCommands = ref(false)
+
+// 注入命令（发送给终端）
+const injectCommand = (cmd) => {
+  if (terminalStore.isConnected) {
+    terminalStore.sendInput(cmd + '\n')
+    if (term) term.focus()
+  } else {
+    ElMessage.warning('当前没用连通的终端')
+  }
+}
 
 // 右键菜单相关
 const contextMenu = ref({
@@ -662,7 +616,6 @@ const resetConnectedState = () => {
     term.reset()
     term.focus()
     // 连接提示
-    term.write('\x1b[32mSSH连接已建立，可以开始输入命令\x1b[0m\r\n\r\n')
     term.write('\x1b[?25h')
     if (typeof term.scrollToTop === 'function') {
       term.scrollToTop()
@@ -702,8 +655,6 @@ watch(() => terminalStore.isConnected, (isConnected, wasConnected) => {
       
       // 延迟写入欢迎信息，确保终端准备好
       setTimeout(() => {
-        term.write('\x1b[32mSSH连接已建立，可以开始输入命令\x1b[0m\r\n\r\n')
-        
         // 确保光标可见，并将滚动条保持在顶部
         term.write('\x1b[?25h') // 显示光标
         
@@ -812,35 +763,83 @@ onUnmounted(() => {
 }
 
 .terminal-header {
-  background-color: #2d2d30;
-  border-bottom: 1px solid #3e3e42;
+  background: linear-gradient(180deg, #3a3a3c 0%, #2d2d30 100%);
+  border-bottom: 1px solid #1a1a1a;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0 20px;
+  padding: 0 16px;
   color: white;
+  height: 38px !important;
+  user-select: none;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+  position: relative;
 }
 
-.header-left {
+.header-back {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 5px;
+  cursor: pointer;
+  padding: 5px 10px;
+  border-radius: 6px;
+  color: #e0e0e0;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.15s ease, color 0.15s ease;
+  z-index: 1;
+}
+
+.header-back:hover {
+  background: rgba(255,255,255,0.12);
+  color: #ffffff;
+}
+
+.back-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dot-red {
+  background: #FF5F57;
+  box-shadow: 0 0 6px rgba(255, 95, 87, 0.6);
+}
+
+.back-icon {
+  font-size: 16px;
+}
+
+.back-text {
+  font-size: 14px;
+  letter-spacing: 0.2px;
+}
+
+.header-title {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 .server-name {
   font-weight: 600;
-  font-size: 16px;
+  font-size: 13px;
+  color: #e0e0e0;
+  letter-spacing: 0.3px;
 }
 
-.server-info {
-  color: #909399;
-  font-size: 14px;
+.server-host {
+  font-size: 11px;
+  color: #888;
+  margin-top: 1px;
 }
 
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.header-right-placeholder {
+  width: 60px;
 }
 
 .main-content {
@@ -991,34 +990,7 @@ onUnmounted(() => {
   width: 16px;
 }
 
-.terminal-footer {
-  flex-shrink: 0; /* 确保 footer 占据固定高度，不压缩也不覆盖终端 */
-  background-color: #2d2d30;
-  border-top: 1px solid #3e3e42;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  padding: 0 20px;
-  color: #909399;
-  font-size: 12px;
-}
 
-.status-bar {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  width: 100%;
-}
-
-.status-item {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.status-item .el-icon {
-  font-size: 14px;
-}
 
 /* XTerm.js 样式调整 */
 :deep(.xterm) {

@@ -83,14 +83,15 @@
           </div>
           
           <!-- 连接提示 -->
-          <div v-if="isConnecting" class="connection-status">
-            <el-alert 
-              title="正在连接服务器..." 
-              type="info" 
-              show-icon 
-              :closable="false"
-              center
-            />
+          <div v-if="isConnecting" class="connection-status-overlay">
+            <div class="connecting-card">
+              <div class="spinner-container">
+                <div class="pulse-ring"></div>
+                <el-icon class="is-loading" size="32" color="#409eff"><Loading /></el-icon>
+              </div>
+              <h3 class="connecting-title">正在建立安全连接</h3>
+              <p class="connecting-desc">正在向目标服务器发起 SSH 连接请求...</p>
+            </div>
           </div>
           
           <!-- 连接状态提示 -->
@@ -114,27 +115,17 @@
       </el-container>
       
       <!-- 状态栏 -->
-      <el-footer class="terminal-footer" v-if="isConnected">
-        <div class="status-bar">
-          <span class="status-item">
-            <el-icon><Connection /></el-icon>
-            已连接
-          </span>
-          <span class="status-item">
-            <el-icon><Monitor /></el-icon>
-            {{ connectionDisplay }}
-          </span>
-          <span 
-            class="status-item clickable" 
-            @click="toggleSftpPanel"
-            :class="{ active: showSftp }"
-          >
-            <el-icon><Folder /></el-icon>
-            文件管理器
-          </span>
-        </div>
-      </el-footer>
+      <TerminalStatusBar 
+        :is-connected="isConnected"
+        :connection-display="connectionDisplay"
+        :show-sftp="showSftp"
+        @toggle-sftp="toggleSftpPanel"
+        @show-commands="showCommands = true"
+      />
     </el-container>
+
+    <!-- 常用命令抽屉组件 -->
+    <CommandLibrary v-model="showCommands" @command="injectCommand" />
   </div>
 </template>
 
@@ -144,11 +135,14 @@ import { useRouter } from 'vue-router'
 import { Terminal } from 'xterm'
 import { FitAddon } from 'xterm-addon-fit'
 import { WebLinksAddon } from 'xterm-addon-web-links'
-import { ArrowLeft, Connection, Close, Delete, Monitor, Folder, Document, Edit, DocumentCopy, DocumentAdd, Select } from '@element-plus/icons-vue'
+import 'xterm/css/xterm.css'
+import { ArrowLeft, Connection, Close, Delete, Monitor, Folder, Document, Edit, DocumentCopy, DocumentAdd, Select, Tickets, Loading } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useQuickSftp } from '@/composables/useQuickSftp'
 import { ElMessage } from 'element-plus'
 import QuickSftpFileManager from '@/components/QuickSftpFileManager.vue'
+import CommandLibrary from '@/components/CommandLibrary.vue'
+import TerminalStatusBar from '@/components/TerminalStatusBar.vue'
 import { io } from 'socket.io-client'
 
 const props = defineProps({
@@ -170,6 +164,19 @@ const quickSftp = useQuickSftp()
 const terminalRef = ref(null)
 const showSftp = ref(false)
 const sftpPanelWidth = ref(350)
+
+// 常用命令显示控制
+const showCommands = ref(false)
+
+// 向终端注入并执行命令
+const injectCommand = (cmd) => {
+  if (socket && isConnected.value) {
+    socket.emit('ssh-input', cmd + '\n')
+    focusTerminal()
+  } else {
+    ElMessage.warning('终端尚未连接')
+  }
+}
 
 // 右键菜单相关
 const contextMenu = ref({
@@ -713,7 +720,7 @@ onUnmounted(() => {
 
 <style scoped>
 .terminal-page {
-  height: 100vh;
+  height: 100%;
   overflow: hidden;
   background-color: #1e1e1e;
   display: flex;
@@ -847,6 +854,73 @@ onUnmounted(() => {
   text-align: center;
 }
 
+/* 现代化连接状态遮罩层 */
+.connection-status-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(30, 30, 30, 0.75);
+  backdrop-filter: blur(8px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 50;
+  animation: fadeIn 0.3s ease;
+}
+
+.connecting-card {
+  background: linear-gradient(145deg, #2a2a2d, #222225);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.4);
+  transform: translateY(-20px);
+}
+
+.spinner-container {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.pulse-ring {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 2px solid #409eff;
+  animation: pulse 1.5s cubic-bezier(0.25, 0.8, 0.25, 1) infinite;
+  opacity: 0;
+}
+
+@keyframes pulse {
+  0% { transform: scale(0.5); opacity: 0.8; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+
+.connecting-title {
+  color: #ffffff;
+  font-size: 18px;
+  font-weight: 500;
+  margin: 0 0 8px 0;
+  letter-spacing: 0.5px;
+}
+
+.connecting-desc {
+  color: #909399;
+  font-size: 13px;
+  margin: 0;
+}
+
 .prompt-content {
   color: #909399;
 }
@@ -894,8 +968,126 @@ onUnmounted(() => {
   cursor: not-allowed;
 }
 
-.menu-item.disabled:hover {
-  background-color: transparent;
+.menu-item.clickable:hover {
+  background-color: #f0f2f5;
+  color: var(--el-color-primary);
+}
+
+/* 常用命令抽屉样式 */
+.command-list-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.command-search {
+  padding: 0 0 16px 0;
+  position: sticky;
+  top: 0;
+  background-color: #fff;
+  z-index: 5;
+}
+
+.command-collapse {
+  flex: 1;
+  overflow-y: auto;
+  border-top: none;
+}
+.command-collapse::-webkit-scrollbar {
+  width: 6px;
+}
+.command-collapse::-webkit-scrollbar-thumb {
+  background-color: #dcdfe6;
+  border-radius: 3px;
+}
+
+.cmd-count {
+  margin-left: 6px;
+  font-size: 12px;
+  color: #909399;
+}
+
+.command-tabs {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+:deep(.command-tabs .el-tabs__content) {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+:deep(.command-tabs .el-tab-pane) {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.private-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 0 12px 0;
+  border-bottom: 1px solid #ebeef5;
+}
+
+.private-io-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.private-collapse {
+  margin-top: 12px;
+}
+
+.private-item {
+  border-left: 3px solid #67c23a;
+}
+
+.command-items {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 0 12px 0;
+}
+
+.command-item {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background-color: #f8f9fa;
+  border-radius: 6px;
+  border: 1px solid #e4e7ed;
+  transition: all 0.3s;
+}
+
+.command-item:hover {
+  border-color: var(--el-color-primary-light-5);
+  box-shadow: 0 4px 12px 0 rgba(0, 0, 0, 0.05);
+}
+
+.cmd-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.cmd-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #303133;
+}
+
+.cmd-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #303133;
 }
 
 .menu-divider {
@@ -909,50 +1101,7 @@ onUnmounted(() => {
   width: 16px;
 }
 
-.terminal-footer {
-  flex-shrink: 0;
-  background-color: #2d2d30;
-  border-top: 1px solid #3e3e42;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  padding: 0 20px;
-  color: #909399;
-  font-size: 12px;
-}
 
-.status-bar {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  width: 100%;
-}
-
-.status-item {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 13px;
-  color: #606266;
-}
-
-.status-item.clickable {
-  cursor: pointer;
-  transition: color 0.2s;
-}
-
-.status-item.clickable:hover {
-  color: #409eff;
-}
-
-.status-item.active {
-  color: #409eff;
-  font-weight: 500;
-}
-
-.status-item .el-icon {
-  font-size: 14px;
-}
 
 /* XTerm.js 样式调整 */
 :deep(.xterm) {

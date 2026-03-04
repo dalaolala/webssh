@@ -1,0 +1,170 @@
+[
+    {
+        "category": "系统信息",
+        "icon": "Monitor",
+        "commands": [
+            {
+                "name": "查看系统版本",
+                "command": "cat /etc/os-release"
+            },
+            {
+                "name": "查看内核版本",
+                "command": "uname -a"
+            },
+            {
+                "name": "查看 CPU 信息",
+                "command": "lscpu"
+            },
+            {
+                "name": "查看内存使用",
+                "command": "free -h"
+            },
+            {
+                "name": "动态查看资源 (Top)",
+                "command": "top"
+            },
+            {
+                "name": "动态查看资源 (htop)",
+                "command": "htop"
+            },
+            {
+                "name": "查看系统运行时长",
+                "command": "uptime"
+            }
+        ]
+    },
+    {
+        "category": "磁盘与文件",
+        "icon": "Folder",
+        "commands": [
+            {
+                "name": "查看磁盘空间",
+                "command": "df -h"
+            },
+            {
+                "name": "查看当前目录大小",
+                "command": "du -sh *"
+            },
+            {
+                "name": "查找大文件 (>100M)",
+                "command": "find / -type f -size +100M -exec ls -lh {} \\; | awk '{ print $9 \": \" $5 }'"
+            },
+            {
+                "name": "清空文件内容",
+                "command": "> filename.log"
+            },
+            {
+                "name": "查看日志尾部",
+                "command": "tail -f filename.log"
+            }
+        ]
+    },
+    {
+        "category": "网络查验",
+        "icon": "Connection",
+        "commands": [
+            {
+                "name": "查看监听端口",
+                "command": "netstat -tulnp"
+            },
+            {
+                "name": "查看端口占用 (ss)",
+                "command": "ss -tulnp"
+            },
+            {
+                "name": "查看 IP 地址",
+                "command": "ip a"
+            },
+            {
+                "name": "测试网络连通",
+                "command": "ping -c 4 8.8.8.8"
+            },
+            {
+                "name": "追踪路由节点",
+                "command": "traceroute google.com"
+            },
+            {
+                "name": "发起 HTTP 请求",
+                "command": "curl -I https://www.google.com"
+            }
+        ]
+    },
+    {
+        "category": "进程管理",
+        "icon": "Cpu",
+        "commands": [
+            {
+                "name": "查看所有进程",
+                "command": "ps aux"
+            },
+            {
+                "name": "查找 Java 进程",
+                "command": "ps aux | grep java"
+            },
+            {
+                "name": "查找 Node 进程",
+                "command": "ps aux | grep node"
+            },
+            {
+                "name": "查找 Nginx 进程",
+                "command": "ps aux | grep nginx"
+            },
+            {
+                "name": "结束指定的进程",
+                "command": "kill -9 PID"
+            }
+        ]
+    },
+    {
+        "category": "Docker 常用",
+        "icon": "Box",
+        "commands": [
+            {
+                "name": "查看所有容器",
+                "command": "docker ps -a"
+            },
+            {
+                "name": "查看正在运行",
+                "command": "docker ps"
+            },
+            {
+                "name": "查看容器日志",
+                "command": "docker logs -f CONTAINER_ID"
+            },
+            {
+                "name": "查看所有镜像",
+                "command": "docker images"
+            },
+            {
+                "name": "查看 Docker 资源统计",
+                "command": "docker stats"
+            },
+            {
+                "name": "清理悬空资源",
+                "command": "docker system prune -f"
+            }
+        ]
+    },
+    {
+        "category": "安全与防火墙",
+        "icon": "Lock",
+        "commands": [
+            {
+                "name": "查看防火墙状态 (Firewalld)",
+                "command": "systemctl status firewalld"
+            },
+            {
+                "name": "查看防火墙状态 (UFW)",
+                "command": "ufw status"
+            },
+            {
+                "name": "查看登录成功的用户",
+                "command": "last"
+            },
+            {
+                "name": "查看登录失败的记录",
+                "command": "lastb"
+            }
+        ]
+    }
+]

@@ -92,13 +92,16 @@
               </div>
             </div>
             
-            <!-- 新标签页按钮 -->
-            <div 
-              class="new-tab-button"
-              @click="createNewTab"
-              title="新标签页"
-            >
-              <el-icon><Plus /></el-icon>
+            <!-- 右侧常用命令按钮 -->
+            <div class="header-actions-right">
+              <div 
+                class="command-library-btn"
+                @click="showCommands = true"
+                title="常用命令库"
+              >
+                <el-icon><Tickets /></el-icon>
+                <span>常用命令</span>
+              </div>
             </div>
           </div>
           
@@ -145,7 +148,7 @@
                 
                 <!-- 连接状态提示 -->
                 <div 
-                  v-if="!tab.connected && !tab.connecting" 
+                  v-if="!tab.connected && !tab.connecting && !tab.error" 
                   class="connection-prompt"
                 >
                   <div class="prompt-content">
@@ -195,6 +198,9 @@
         </div>
       </el-main>
     </el-container>
+
+    <!-- 常用命令抽屉组件 -->
+    <CommandLibrary v-model="showCommands" @command="injectCommand" />
   </div>
 </template>
 
@@ -204,6 +210,7 @@ import { useRouter } from 'vue-router'
 import { Terminal } from 'xterm'
 import { FitAddon } from 'xterm-addon-fit'
 import { WebLinksAddon } from 'xterm-addon-web-links'
+import 'xterm/css/xterm.css'
 import { 
   Connection, 
   SuccessFilled, 
@@ -213,13 +220,15 @@ import {
   Plus, 
   Monitor,
   Folder,
-  Back
+  Back,
+  Tickets
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useTerminalStore } from '@/stores/terminal'
 import { useServersStore } from '@/stores/servers'
 import { useAuthStore } from '@/stores/auth'
 import QuickConnect from './QuickConnect.vue'
+import CommandLibrary from '@/components/CommandLibrary.vue'
 import { io } from 'socket.io-client'
 
 const authStore = useAuthStore()
@@ -231,6 +240,14 @@ const terminalRefs = ref({})
 const tabs = ref([])
 const activeTabId = ref(null)
 const contextMenu = ref({ visible: false, x: 0, y: 0, tabId: null })
+
+// 常用命令显示控制
+const showCommands = ref(false)
+
+// 当前活动的终端页签
+const activeTab = computed(() => {
+  return tabs.value.find(tab => tab.id === activeTabId.value)
+})
 
 // 计算属性：树型结构数据
 const serverTreeData = computed(() => {
@@ -265,10 +282,15 @@ const treeProps = {
   label: 'label'
 }
 
-// 计算属性：当前活动页签
-const activeTab = computed(() => {
-  return tabs.value.find(tab => tab.id === activeTabId.value)
-})
+// 注入命令（发射给当前活动的终端）
+const injectCommand = (cmd) => {
+  if (activeTab.value && activeTab.value.type === 'terminal' && activeTab.value.connected && activeTab.value.socket) {
+    activeTab.value.socket.emit('ssh-input', cmd + '\n')
+    focusTerminal(activeTab.value.id)
+  } else {
+    ElMessage.warning('当前没用连通的终端')
+  }
+}
 
 // 获取服务器状态
 const getServerStatus = (serverId) => {
@@ -488,7 +510,6 @@ const clearFromContextMenu = (tabId) => {
   if (!tab || !tab.terminal) return
   tab.terminal.reset()
   tab.terminal.focus()
-  tab.terminal.write('\x1b[32mSSH连接已建立，可以开始输入命令\x1b[0m\r\n\r\n')
   tab.terminal.write('\x1b[?25h')
   const terminalEl = document.querySelector(`[data-tab-id="${tab.id}"]`)
   const viewportEl = terminalEl?.querySelector('.xterm-viewport')
@@ -622,7 +643,6 @@ const performConnection = async (tab, serverId) => {
       tab.error = null
       if (tab.terminal) {
         tab.terminal.clear()
-        tab.terminal.write('\x1b[32mSSH连接已建立，可以开始输入命令\x1b[0m\r\n\r\n')
       }
     })
     // 终端输出
@@ -680,6 +700,13 @@ const performConnection = async (tab, serverId) => {
 // 切换页签
 const switchTab = (tabId) => {
   activeTabId.value = tabId
+  const tab = tabs.value.find(t => t.id === tabId)
+  if (tab && tab.terminal && tab.fitAddon) {
+    nextTick(() => {
+      tab.fitAddon.fit()
+      tab.terminal.focus()
+    })
+  }
 }
 
 // 关闭页签
@@ -820,7 +847,6 @@ const performQuickConnection = async (tab, connectionInfo) => {
         tab.connecting = false
         if (tab.terminal) {
           tab.terminal.clear()
-          tab.terminal.write('\x1b[32mSSH连接已建立，可以开始输入命令\x1b[0m\r\n\r\n')
         }
         unwatch()
       }
@@ -1094,10 +1120,14 @@ onUnmounted(() => {
 .tabs-main {
   padding: 0 !important;
   background-color: #1e1e1e;
+  overflow: hidden !important;
+  display: flex;
+  flex-direction: column;
 }
 
 .tabs-container {
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }
@@ -1116,6 +1146,37 @@ onUnmounted(() => {
   display: flex;
   overflow-x: auto;
   overflow-y: hidden;
+}
+
+.header-actions-right {
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  background-color: transparent;
+  margin-left: auto;
+  z-index: 10;
+}
+
+.command-library-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  background: linear-gradient(135deg, #3a86ff 0%, #2575fc 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 2px 8px rgba(58, 134, 255, 0.25);
+}
+
+.command-library-btn:hover {
+  background: linear-gradient(135deg, #4b92ff 0%, #3682fc 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(58, 134, 255, 0.4);
 }
 
 .tab-item {
@@ -1170,21 +1231,29 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
-  color: #909399;
+  width: 32px;
+  height: 28px;
+  margin-left: 8px;
+  margin-top: 6px;
+  color: #a0a0a0;
   cursor: pointer;
-  transition: all 0.2s ease;
-  border-left: 1px solid #3e3e42;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 6px;
+  background-color: rgba(255, 255, 255, 0.05);
+  flex-shrink: 0;
 }
 
 .new-tab-button:hover {
-  background-color: #323233;
+  background-color: #3a86ff;
   color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(58, 134, 255, 0.3);
 }
 
 .tabs-content {
   flex: 1;
+  height: calc(100% - 40px);
+  min-height: 0;
   position: relative;
   overflow: hidden;
 }
@@ -1203,15 +1272,18 @@ onUnmounted(() => {
 }
 
 .terminal-wrapper {
-  position: relative;
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  bottom: 20px;
 }
 
 .terminal {
   width: 100%;
   height: 100%;
   padding: 0;
+  box-sizing: border-box;
   cursor: text;
   position: relative;
 }
