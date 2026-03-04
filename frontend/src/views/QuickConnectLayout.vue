@@ -101,10 +101,8 @@ const getTabLabel = (tab) => {
   if (tab.type === 'form') return '快速连接'
   const conn = tab.connectionInfo
   if (!conn) return '会话'
-  const name = conn.name || ''
-  const userHost = `${conn.username || ''}@${conn.host || ''}:${conn.port || 22}`
-  const displayString = name ? `${name} (${userHost})` : userHost
-  return tab.type === 'sftp' ? `[SFTP] ${displayString}` : displayString
+  const name = conn.name || conn.host || '未命名'
+  return tab.type === 'sftp' ? `[SFTP] ${name}` : name
 }
 
 const createNewTab = () => {

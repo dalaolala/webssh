@@ -1,30 +1,41 @@
 <template>
   <el-footer class="terminal-footer" v-if="isConnected">
     <div class="status-bar">
-      <span class="status-item">
-        <el-icon><Connection /></el-icon>
-        已连接
-      </span>
-      <span class="status-item status-item-host">
+      <!-- Connection Status with Pulse LED -->
+      <div class="status-item status-pill connected">
+        <span class="pulse-led"></span>
+        <span class="status-text">已连接</span>
+      </div>
+
+      <!-- Server Host Info -->
+      <div class="status-item host-info">
         <el-icon><Monitor /></el-icon>
-        {{ connectionDisplay }}
-      </span>
-      <span 
-        class="status-item clickable" 
-        @click="$emit('toggle-sftp')"
-        :class="{ active: showSftp }"
-      >
-        <el-icon><Folder /></el-icon>
-        文件管理器
-      </span>
-      <span 
-        class="status-item clickable" 
-        @click="$emit('show-commands')"
-        title="常用 Linux 命令库"
-      >
-        <el-icon><Tickets /></el-icon>
-        常用命令
-      </span>
+        <span class="host-text">{{ connectionDisplay }}</span>
+      </div>
+
+      <!-- Actions (Now placed after host info) -->
+      <div class="status-actions">
+        <div 
+          class="action-item" 
+          :class="{ active: showSftp }"
+          @click="$emit('toggle-sftp')"
+          title="文件管理器"
+        >
+          <el-icon><Folder /></el-icon>
+          <span>文件管理</span>
+        </div>
+        <div 
+          class="action-item" 
+          @click="$emit('show-commands')"
+          title="常用命令库"
+        >
+          <el-icon><Tickets /></el-icon>
+          <span>常用命令</span>
+        </div>
+      </div>
+
+      <!-- Spacer -->
+      <div class="flex-spacer"></div>
     </div>
   </el-footer>
 </template>
@@ -53,74 +64,112 @@ defineEmits(['toggle-sftp', 'show-commands'])
 <style scoped>
 .terminal-footer {
   flex-shrink: 0;
-  background: linear-gradient(90deg, #1e1e1e 0%, #252526 50%, #1e1e1e 100%);
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  height: 48px;
+  height: 32px !important;
+  padding: 0 12px;
   display: flex;
   align-items: center;
-  padding: 0 24px;
-  color: #a0a0a0;
-  font-size: 13px;
-  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.2);
+  /* Glassmorphism Effect */
+  background: rgba(28, 28, 30, 0.75);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 -1px 0 rgba(0, 0, 0, 0.3);
+  color: #d1d1d6;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  font-size: 11px;
   position: relative;
-  z-index: 10;
+  z-index: 100;
 }
 
 .status-bar {
   display: flex;
   align-items: center;
-  gap: 16px;
   width: 100%;
+  height: 100%;
+  gap: 12px;
 }
 
-.status-item {
+.status-pill {
   display: flex;
   align-items: center;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.status-pill.connected {
+  background: rgba(52, 199, 89, 0.1);
+  border-color: rgba(52, 199, 89, 0.2);
+  color: #32d74b;
+  font-weight: 500;
+}
+
+.pulse-led {
+  width: 6px;
+  height: 6px;
+  background-color: #32d74b;
+  border-radius: 50%;
+  margin-right: 6px;
+  box-shadow: 0 0 4px rgba(50, 215, 75, 0.6);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(50, 215, 75, 0.7); }
+  70% { transform: scale(1); box-shadow: 0 0 0 4px rgba(50, 215, 75, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(50, 215, 75, 0); }
+}
+
+.host-info {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  opacity: 0.8;
+  font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
+}
+
+.flex-spacer {
+  flex: 1;
+}
+
+.status-actions {
+  display: flex;
   gap: 8px;
-  font-size: 13px;
-  color: #b0b0b0;
-  padding: 6px 14px;
+}
+
+.action-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
   border-radius: 6px;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  background-color: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-.status-item:first-child {
-  color: #67c23a;
-  background-color: rgba(103, 194, 58, 0.1);
-  border-color: rgba(103, 194, 58, 0.2);
-  font-weight: 600;
+.action-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
 }
 
-.status-item-host {
-  color: #ffffff !important;
-  font-family: 'Courier New', monospace;
-  background-color: rgba(0, 0, 0, 0.25) !important;
-  border-color: rgba(255, 255, 255, 0.1) !important;
+.action-item.active {
+  background: rgba(0, 122, 255, 0.15);
+  border-color: rgba(0, 122, 255, 0.3);
+  color: #0a84ff;
+  font-weight: 500;
 }
 
-.status-item.clickable {
-  cursor: pointer;
+.status-divider {
+  width: 1px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 0 4px;
 }
 
-.status-item.clickable:hover {
-  background-color: rgba(64, 158, 255, 0.15);
-  border-color: rgba(64, 158, 255, 0.4);
-  color: #409eff;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-}
-
-.status-item.active {
-  background-color: rgba(64, 158, 255, 0.2);
-  border-color: rgba(64, 158, 255, 0.5);
-  color: #409eff;
-  font-weight: 600;
-  box-shadow: 0 0 12px rgba(64, 158, 255, 0.15);
-}
-
-.status-item .el-icon {
-  font-size: 15px;
+.action-item .el-icon {
+  font-size: 13px;
 }
 </style>
