@@ -105,6 +105,15 @@
             <!-- 右侧常用命令按钮 -->
             <div class="header-actions-right">
               <div 
+                v-if="tabs.length > 0"
+                class="command-library-btn danger-btn"
+                @click="closeAllTabs"
+                title="强制关闭所有标签页"
+              >
+                <el-icon><Delete /></el-icon>
+                <span>关闭全部</span>
+              </div>
+              <div 
                 class="command-library-btn"
                 @click="showCommands = true"
                 title="常用命令库"
@@ -128,33 +137,15 @@
                 v-if="tab.type === 'terminal'"
                 class="terminal-wrapper"
               >
-                <div 
-                  ref="terminalRefs"
-                  :data-tab-id="tab.id"
+                <XtermTerminal
+                  :ref="(el) => { if (el) terminalComponentRefs[tab.id] = el }"
                   class="terminal"
+                  :is-connected="tab.connected"
+                  :tab-id="tab.id"
+                  @data="(data) => handleTerminalData(data, tab.id)"
+                  @resize="(dim) => handleTerminalResize(dim, tab.id)"
                   @click="focusTerminal(tab.id)"
-                  @contextmenu.prevent="onContextMenu($event, tab.id)"
-                ></div>
-                <div 
-                  v-if="contextMenu.visible && contextMenu.tabId === tab.id" 
-                  class="context-menu" 
-                  :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
-                  @click.stop
-                >
-                  <div 
-                    class="menu-item" 
-                    :class="{ disabled: !hasSelection(tab.id) }" 
-                    @click="copyFromContextMenu(tab.id)"
-                  >
-                    <span>复制选中</span>
-                  </div>
-                  <div class="menu-item" @click="pasteFromContextMenu(tab.id)">
-                    <span>粘贴剪贴板</span>
-                  </div>
-                  <div class="menu-item" @click="clearFromContextMenu(tab.id)">
-                    <span>清屏</span>
-                  </div>
-                </div>
+                />
                 
                 <!-- 连接状态提示 -->
                 <div 
@@ -217,10 +208,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, nextTick, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Terminal } from 'xterm'
-import { FitAddon } from 'xterm-addon-fit'
-import { WebLinksAddon } from 'xterm-addon-web-links'
-import 'xterm/css/xterm.css'
+import XtermTerminal from '@/components/XtermTerminal.vue'
 import { 
   Connection, 
   SuccessFilled, 
@@ -247,10 +235,9 @@ const terminalStore = useTerminalStore()
 const serversStore = useServersStore()
 const router = useRouter()
 
-const terminalRefs = ref({})
+const terminalComponentRefs = ref({})
 const tabs = ref([])
 const activeTabId = ref(null)
-const contextMenu = ref({ visible: false, x: 0, y: 0, tabId: null })
 
 // 搜索文本
 const searchQuery = ref('')
@@ -336,227 +323,37 @@ const createNewTab = () => {
     connected: false,
     connecting: false,
     error: null,
-    terminal: null,
-    fitAddon: null,
-    socket: null,
-    autoScroll: true,
-    viewportWheelHandler: null
+    socket: null
   }
   
   tabs.value.push(newTab)
   activeTabId.value = tabId
-  
-  // 延迟初始化终端
-  nextTick(() => {
-    initTerminal(newTab)
+}
+
+// 处理终端输入
+const handleTerminalData = (data, tabId) => {
+  const tab = tabs.value.find(t => t.id === tabId)
+  if (!tab || !tab.connected || !tab.socket) return
+  tab.socket.emit('ssh-input', data)
+}
+
+// 处理终端尺寸改变
+const handleTerminalResize = (dimensions, tabId) => {
+  const tab = tabs.value.find(t => t.id === tabId)
+  if (!tab || !tab.connected || !tab.socket) return
+  tab.socket.emit('ssh-resize', {
+    cols: dimensions.cols,
+    rows: dimensions.rows,
+    width: dimensions.width,
+    height: dimensions.height
   })
 }
 
-// 初始化终端
-const initTerminal = (tab) => {
-  const terminalEl = document.querySelector(`[data-tab-id="${tab.id}"]`)
-  if (!terminalEl) return
-  
-  tab.terminal = new Terminal({
-    cursorBlink: true,
-    fontSize: 14,
-    fontFamily: 'Courier New, monospace',
-    theme: {
-      background: '#1e1e1e',
-      foreground: '#ffffff',
-      cursor: '#ffffff',
-      cursorAccent: '#ffffff',
-      selection: 'rgba(54, 99, 181, 0.35)',
-      selectionForeground: undefined
-    },
-    disableStdin: false,
-    scrollback: 10000,
-    convertEol: true,
-    allowTransparency: false,
-    tabStopWidth: 8,
-    cursorStyle: 'block',
-    bellStyle: 'sound',
-    allowProposedApi: true,
-    windowsMode: true,
-    screenReaderMode: false,
-    scrollOnUserInput: true,
-    scrollOnOutput: false,
-    scrollSensitivity: 3,
-    smoothScrollDuration: 0,
-    fastScrollSensitivity: 5,
-    fastScrollModifier: 'alt',
-    macOptionIsMeta: false,
-    macOptionClickForcesSelection: false,
-    rightClickSelectsWord: false,
-    rendererType: 'canvas'
-  })
-  
-  tab.fitAddon = new FitAddon()
-  tab.terminal.loadAddon(tab.fitAddon)
-  
-  const webLinksAddon = new WebLinksAddon()
-  tab.terminal.loadAddon(webLinksAddon)
-  
-  tab.terminal.open(terminalEl)
-  tab.fitAddon.fit()
-  
-  // 设置终端输入处理
-  tab.terminal.onData((data) => {
-    if (tab.connected) {
-      if (tab.socket) {
-        tab.socket.emit('ssh-input', data)
-      }
-      if (tab.autoScroll && tab.terminal.scrollToBottom) {
-        tab.terminal.scrollToBottom()
-      }
-    } else {
-      tab.terminal.write('\r\n\x1b[31m未连接到服务器，请先连接\x1b[0m\r\n')
-    }
-  })
-  
-  // 隐藏辅助输入框
-  hideHelperTextarea(tab.id)
-
-  tab.terminal.attachCustomKeyEventHandler((event) => {
-    if ((event.ctrlKey || event.metaKey) && !['c', 'v', 'a', 'z', 'x', 'y'].includes(event.key.toLowerCase())) {
-      event.preventDefault()
-    }
-    return true
-  })
-
-  tab.terminal.attachCustomKeyEventHandler((event) => {
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v') {
-      event.preventDefault()
-      navigator.clipboard.readText().then(text => {
-        if (tab.connected && tab.socket) {
-          tab.socket.emit('ssh-input', text)
-          if (tab.autoScroll && tab.terminal.scrollToBottom) {
-            tab.terminal.scrollToBottom()
-          }
-        }
-      }).catch(() => {})
-      return false
-    }
-    return true
-  })
-
-  tab.terminal.attachCustomKeyEventHandler((event) => {
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
-      const selection = tab.terminal.getSelection()
-      if (selection) {
-        navigator.clipboard.writeText(selection).catch(() => {})
-      }
-    }
-    return true
-  })
-
-  tab.terminal.attachCustomKeyEventHandler((event) => {
-    if (event.code === 'Space' || event.key === ' ') {
-      event.preventDefault()
-      if (tab.connected && tab.socket) {
-        tab.socket.emit('ssh-input', ' ')
-        if (tab.autoScroll && tab.terminal.scrollToBottom) {
-          tab.terminal.scrollToBottom()
-        }
-      }
-      return false
-    }
-    return true
-  })
-
-  const viewportEl = terminalEl.querySelector('.xterm-viewport')
-  if (viewportEl) {
-    const handler = (e) => {
-      const mode = e.deltaMode
-      const unit = mode === 1 ? 40 : (mode === 2 ? viewportEl.clientHeight : 1)
-      const delta = e.deltaY * unit
-      const next = Math.min(
-        viewportEl.scrollHeight - viewportEl.clientHeight,
-        Math.max(0, viewportEl.scrollTop + delta)
-      )
-      e.preventDefault()
-      viewportEl.scrollTop = next
-      const nearBottom = viewportEl.scrollTop >= (viewportEl.scrollHeight - viewportEl.clientHeight - 2)
-      // 用户滚动时，如果不在底部则关闭自动滚动；到达底部后开启自动滚动
-      tab.autoScroll = nearBottom
-    }
-    viewportEl.addEventListener('wheel', handler, { passive: false })
-    tab.viewportWheelHandler = handler
-  }
-}
-
-const onContextMenu = (event, tabId) => {
-  contextMenu.value = { visible: true, x: event.clientX, y: event.clientY, tabId }
-  document.addEventListener('click', hideContextMenuOnce, { once: true })
-}
-
-const hideContextMenuOnce = () => {
-  contextMenu.value.visible = false
-}
-
-const getTabById = (tabId) => tabs.value.find(t => t.id === tabId)
-
-const hasSelection = (tabId) => {
-  const tab = getTabById(tabId)
-  if (!tab || !tab.terminal) return false
-  const sel = tab.terminal.getSelection()
-  return !!sel && sel.length > 0
-}
-
-const copyFromContextMenu = async (tabId) => {
-  const tab = getTabById(tabId)
-  if (!tab || !tab.terminal) return
-  const selection = tab.terminal.getSelection()
-  if (selection) {
-    try {
-      await navigator.clipboard.writeText(selection)
-    } catch {}
-  }
-  contextMenu.value.visible = false
-}
-
-const pasteFromContextMenu = async (tabId) => {
-  const tab = getTabById(tabId)
-  if (!tab || !tab.socket || !tab.connected) return
-  try {
-    const text = await navigator.clipboard.readText()
-    if (text) {
-      tab.socket.emit('ssh-input', text)
-      if (tab.autoScroll && tab.terminal && tab.terminal.scrollToBottom) {
-        tab.terminal.scrollToBottom()
-      }
-    }
-  } catch {}
-  contextMenu.value.visible = false
-}
-
-const clearFromContextMenu = (tabId) => {
-  const tab = getTabById(tabId)
-  if (!tab || !tab.terminal) return
-  tab.terminal.reset()
-  tab.terminal.focus()
-  tab.terminal.write('\x1b[?25h')
-  const terminalEl = document.querySelector(`[data-tab-id="${tab.id}"]`)
-  const viewportEl = terminalEl?.querySelector('.xterm-viewport')
-  if (viewportEl) {
-    viewportEl.scrollTop = 0
-  }
-  contextMenu.value.visible = false
-}
-
-// 隐藏辅助输入框
-const hideHelperTextarea = (tabId) => {
-  const terminalEl = document.querySelector(`[data-tab-id="${tabId}"]`)
-  if (!terminalEl) return
-  
-  const textarea = terminalEl.querySelector('.xterm-helper-textarea')
-  if (textarea) {
-    textarea.style.width = '0'
-    textarea.style.height = '0'
-    textarea.style.opacity = '0'
-    textarea.style.position = 'absolute'
-    textarea.style.left = '-9999px'
-    textarea.style.zIndex = '-1'
+// 聚焦终端
+const focusTerminal = (tabId) => {
+  const component = terminalComponentRefs.value[tabId]
+  if (component) {
+    component.focus()
   }
 }
 
@@ -622,10 +419,12 @@ const createNewTabForServer = async (server) => {
   tabs.value.push(newTab)
   activeTabId.value = tabId
   
-  // 延迟初始化终端和连接
+  // 延迟初始化连接
   nextTick(async () => {
-    await initTerminal(newTab)
-    await performConnection(newTab, server.id)
+    const reactiveTab = tabs.value.find(t => t.id === tabId)
+    if (reactiveTab) {
+      await performConnection(reactiveTab, server.id)
+    }
   })
 }
 
@@ -651,18 +450,18 @@ const performConnection = async (tab, serverId) => {
     tab.socket.on('authenticated', (data) => {
       if (data.success) {
         // 显示连接提示
-        if (tab.terminal) {
-          tab.terminal.clear()
-          tab.terminal.write('\x1b[33m正在连接服务器...\x1b[0m\r\n')
+        const tc = terminalComponentRefs.value[tab.id]
+        if (tc) {
+          tc.clear()
+          tc.write('\x1b[33m正在连接服务器...\x1b[0m\r\n')
         }
         // 发起SSH连接
         tab.socket.emit('connect-ssh', serverId)
       } else {
         tab.connecting = false
         tab.error = '认证失败'
-        if (tab.terminal) {
-          tab.terminal.write('\r\n\x1b[31m认证失败\x1b[0m\r\n')
-        }
+        const tc = terminalComponentRefs.value[tab.id]
+        if (tc) tc.write('\r\n\x1b[31m认证失败\x1b[0m\r\n')
       }
     })
     // 连接成功
@@ -670,36 +469,32 @@ const performConnection = async (tab, serverId) => {
       tab.connected = true
       tab.connecting = false
       tab.error = null
-      if (tab.terminal) {
-        tab.terminal.clear()
+      const tc = terminalComponentRefs.value[tab.id]
+      if (tc) {
+        tc.clear()
+        tc.focus()
       }
     })
     // 终端输出
     tab.socket.on('ssh-data', (data) => {
       const output = typeof data === 'string' ? data : String(data)
-      if (tab.terminal) {
-        tab.terminal.write(output)
-        if (tab.autoScroll && tab.terminal.scrollToBottom) {
-          tab.terminal.scrollToBottom()
-        }
-      }
+      const tc = terminalComponentRefs.value[tab.id]
+      if (tc) tc.write(output)
     })
     // 错误
     tab.socket.on('ssh-error', (data) => {
       tab.connecting = false
       tab.connected = false
       tab.error = data.error || '连接错误'
-      if (tab.terminal) {
-        tab.terminal.write(`\r\n\x1b[31m连接错误: ${tab.error}\x1b[0m\r\n`)
-      }
+      const tc = terminalComponentRefs.value[tab.id]
+      if (tc) tc.write(`\r\n\x1b[31m连接错误: ${tab.error}\x1b[0m\r\n`)
     })
     // 连接关闭
     tab.socket.on('ssh-closed', () => {
       tab.connected = false
       tab.connecting = false
-      if (tab.terminal) {
-        tab.terminal.write('\r\n\x1b[33m连接已关闭\x1b[0m\r\n')
-      }
+      const tc = terminalComponentRefs.value[tab.id]
+      if (tc) tc.write('\r\n\x1b[33m连接已关闭\x1b[0m\r\n')
     })
     // Socket断开
     tab.socket.on('disconnect', () => {
@@ -711,29 +506,26 @@ const performConnection = async (tab, serverId) => {
       if (!tab.connected && !tab.error) {
         tab.connecting = false
         tab.error = '连接超时'
-        if (tab.terminal) {
-          tab.terminal.write('\r\n\x1b[31m连接超时\x1b[0m\r\n')
-        }
+        const tc = terminalComponentRefs.value[tab.id]
+        if (tc) tc.write('\r\n\x1b[31m连接超时\x1b[0m\r\n')
       }
     }, 30000)
     
   } catch (error) {
     tab.connecting = false
     tab.error = error.message
-    if (tab.terminal) {
-      tab.terminal.write(`\r\n\x1b[31m连接失败: ${error.message}\x1b[0m\r\n`)
-    }
+    const tc = terminalComponentRefs.value[tab.id]
+    if (tc) tc.write(`\r\n\x1b[31m连接失败: ${error.message}\x1b[0m\r\n`)
   }
 }
 
 // 切换页签
 const switchTab = (tabId) => {
   activeTabId.value = tabId
-  const tab = tabs.value.find(t => t.id === tabId)
-  if (tab && tab.terminal && tab.fitAddon) {
+  const component = terminalComponentRefs.value[tabId]
+  if (component) {
     nextTick(() => {
-      tab.fitAddon.fit()
-      tab.terminal.focus()
+      component.focus()
     })
   }
 }
@@ -749,7 +541,7 @@ const closeTab = async (tabId) => {
   if (tab && tab.connected) {
     try {
       await ElMessageBox.confirm(
-        '当前标签页有活动的SSH连接，确定要关闭吗？',
+        '当前标签页有活动的连接，确定要关闭吗？',
         '确认关闭',
         {
           confirmButtonText: '确定',
@@ -771,18 +563,8 @@ const closeTab = async (tabId) => {
     }
   }
   
-  // 清理终端资源
-  if (tab && tab.terminal) {
-    tab.terminal.dispose()
-  }
-  if (tab && tab.viewportWheelHandler) {
-    const terminalEl = document.querySelector(`[data-tab-id="${tab.id}"]`)
-    const viewportEl = terminalEl?.querySelector('.xterm-viewport')
-    if (viewportEl) {
-      viewportEl.removeEventListener('wheel', tab.viewportWheelHandler)
-    }
-    tab.viewportWheelHandler = null
-  }
+  // 清理终端引用
+  delete terminalComponentRefs.value[tabId]
   
   // 移除页签
   tabs.value = tabs.value.filter(t => t.id !== tabId)
@@ -792,17 +574,49 @@ const closeTab = async (tabId) => {
     const remainingTabs = tabs.value
     if (remainingTabs.length > 0) {
       activeTabId.value = remainingTabs[remainingTabs.length - 1].id
+    } else {
+      activeTabId.value = null
     }
   }
 }
 
-// 聚焦终端
-const focusTerminal = (tabId) => {
-  const tab = tabs.value.find(t => t.id === tabId)
-  if (tab && tab.terminal) {
-    tab.terminal.focus()
+// 强制关闭所有页签
+const closeAllTabs = async () => {
+  if (tabs.value.length === 0) return
+  
+  const hasConnectedTabs = tabs.value.some(t => t.connected)
+  if (hasConnectedTabs) {
+    try {
+      await ElMessageBox.confirm(
+        '确定要强制关闭所有活动的会话标签页吗？未保存的工作将会丢失。',
+        '强制断开所有连接',
+        {
+          confirmButtonText: '确定关闭',
+          cancelButtonText: '取消',
+          type: 'error'
+        }
+      )
+    } catch {
+      return
+    }
   }
+  
+  // 遍历清理所有连接
+  tabs.value.forEach(tab => {
+    if (tab.connected && tab.socket) {
+      tab.socket.emit('disconnect-ssh')
+      tab.socket.disconnect()
+      tab.socket = null
+    }
+    delete terminalComponentRefs.value[tab.id]
+  })
+  
+  // 清空所有状态
+  tabs.value = []
+  activeTabId.value = null
+  ElMessage.success('已强制关闭所有会话标签')
 }
+
 
 // 快速连接
 const handleQuickConnect = () => {
@@ -833,14 +647,15 @@ const handleQuickConnectSubmit = (connectionInfo) => {
     terminal: null,
     fitAddon: null
   }
-  
   tabs.value.push(newTab)
   activeTabId.value = tabId
   
-  // 延迟初始化终端和连接
+  // 延迟初始化连接
   nextTick(async () => {
-    await initTerminal(newTab)
-    await performQuickConnection(newTab, connectionInfo)
+    const reactiveTab = tabs.value.find(t => t.id === tabId)
+    if (reactiveTab) {
+      await performQuickConnection(reactiveTab, connectionInfo)
+    }
   })
 }
 
@@ -861,9 +676,10 @@ const performQuickConnection = async (tab, connectionInfo) => {
     }
     
     // 清空终端并显示连接信息
-    if (tab.terminal) {
-      tab.terminal.clear()
-      tab.terminal.write('\x1b[33m正在连接服务器...\x1b[0m\r\n')
+    const tc = terminalComponentRefs.value[tab.id]
+    if (tc) {
+      tc.clear()
+      tc.write('\x1b[33m正在连接服务器...\x1b[0m\r\n')
     }
     
     // 快速连接
@@ -874,9 +690,8 @@ const performQuickConnection = async (tab, connectionInfo) => {
       if (isConnected) {
         tab.connected = true
         tab.connecting = false
-        if (tab.terminal) {
-          tab.terminal.clear()
-        }
+        const tcomp = terminalComponentRefs.value[tab.id]
+        if (tcomp) tcomp.clear()
         unwatch()
       }
     })
@@ -886,19 +701,19 @@ const performQuickConnection = async (tab, connectionInfo) => {
       if (error) {
         tab.connecting = false
         tab.error = error
-        if (tab.terminal) {
-          tab.terminal.write(`\r\n\x1b[31m连接错误: ${error}\x1b[0m\r\n`)
-        }
+        const tcomp = terminalComponentRefs.value[tab.id]
+        if (tcomp) tcomp.write(`\r\n\x1b[31m连接错误: ${error}\x1b[0m\r\n`)
         errorWatch()
       }
     })
     
     // 监听终端输出
     const outputWatch = watch(() => terminalStore.terminalOutput, (newOutput, oldOutput) => {
-      if (tab.terminal && tab.connected) {
+      if (tab.connected) {
         const newData = newOutput.slice(oldOutput.length)
         if (newData) {
-          tab.terminal.write(newData)
+          const tcomp = terminalComponentRefs.value[tab.id]
+          if (tcomp) tcomp.write(newData)
         }
       }
     })
@@ -917,35 +732,12 @@ const performQuickConnection = async (tab, connectionInfo) => {
   } catch (error) {
     tab.connecting = false
     tab.error = error.message
-    if (tab.terminal) {
-      tab.terminal.write(`\r\n\x1b[31m连接失败: ${error.message}\x1b[0m\r\n`)
-    }
+    const tc = terminalComponentRefs.value[tab.id]
+    if (tc) tc.write(`\r\n\x1b[31m连接失败: ${error.message}\x1b[0m\r\n`)
   }
 }
 
-// 窗口大小变化处理
-const handleResize = () => {
-  tabs.value.forEach(tab => {
-    if (tab.fitAddon) {
-      tab.fitAddon.fit()
-      
-      // 发送终端大小到服务器
-      if (tab.connected) {
-        const dimensions = tab.fitAddon.proposeDimensions()
-        if (dimensions) {
-          if (tab.socket) {
-            tab.socket.emit('resize', {
-              rows: dimensions.rows,
-              cols: dimensions.cols,
-              height: dimensions.height,
-              width: dimensions.width
-            })
-          }
-        }
-      }
-    }
-  })
-}
+/* Replace window listener manually, kept as empty stub since component handles it */
 
 onMounted(async () => {
   // 加载服务器列表
@@ -953,26 +745,17 @@ onMounted(async () => {
   
   // 创建初始页签
   createNewTab()
-  
-  // 监听窗口大小变化
-  window.addEventListener('resize', handleResize)
 })
 
 onUnmounted(() => {
   // 清理所有终端资源
   tabs.value.forEach(tab => {
-    if (tab.terminal) {
-      tab.terminal.dispose()
-    }
     if (tab.socket) {
       tab.socket.emit('disconnect-ssh')
       tab.socket.disconnect()
       tab.socket = null
     }
   })
-  
-  // 移除事件监听器
-  window.removeEventListener('resize', handleResize)
 })
 </script>
 
@@ -1195,6 +978,7 @@ onUnmounted(() => {
 .header-actions-right {
   display: flex;
   align-items: center;
+  gap: 8px;
   padding: 0 16px;
   background-color: transparent;
   margin-left: auto;
@@ -1205,22 +989,52 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  color: #ffffff;
+  color: rgba(255, 255, 255, 0.85); /* Mac white */
   font-size: 13px;
   font-weight: 500;
-  padding: 6px 14px;
-  border-radius: 6px;
+  padding: 5px 12px;
+  border-radius: 6px; /* Apple uses 6-8px for small buttons */
   cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  background: linear-gradient(135deg, #3a86ff 0%, #2575fc 100%);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 2px 8px rgba(58, 134, 255, 0.25);
+  transition: all 0.2s cubic-bezier(0.25, 0.1, 0.25, 1);
+  background: rgba(255, 255, 255, 0.08); /* Frosted effect base */
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px); /* Frosted glass */
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .command-library-btn:hover {
-  background: linear-gradient(135deg, #4b92ff 0%, #3682fc 100%);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(58, 134, 255, 0.4);
+  background: rgba(255, 255, 255, 0.15);
+  transform: translateY(-0.5px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.command-library-btn:active {
+  background: rgba(255, 255, 255, 0.05);
+  transform: translateY(0);
+  box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.2);
+  border-color: rgba(255, 255, 255, 0.02);
+}
+
+.command-library-btn.danger-btn {
+  background: rgba(255, 69, 58, 0.15); /* Apple Red translucent */
+  color: #ff453a; /* iOS dark mode red */
+  border: 1px solid rgba(255, 69, 58, 0.2);
+}
+
+.command-library-btn.danger-btn:hover {
+  background: rgba(255, 69, 58, 0.85);
+  color: #fff;
+  border-color: rgba(255, 69, 58, 0.9);
+  box-shadow: 0 2px 6px rgba(255, 69, 58, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.command-library-btn.danger-btn:active {
+  background: rgba(255, 69, 58, 1);
+  transform: translateY(0);
+  box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.2);
 }
 
 .tab-item {
@@ -1358,129 +1172,5 @@ onUnmounted(() => {
   overflow-y: auto;
 }
 
-/* XTerm.js 样式调整 */
-:deep(.xterm) {
-  padding: 0 !important;
-  overflow: hidden !important;
-  position: relative !important;
-  height: 100% !important;
-  width: 100% !important;
-  display: flex !important;
-  flex-direction: column !important;
-}
 
-:deep(.xterm-viewport) {
-  background-color: #1e1e1e !important;
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
-  overscroll-behavior: contain;
-  direction: ltr !important;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.3) rgba(255, 255, 255, 0.1);
-  position: relative !important;
-  width: 100% !important;
-  height: 100% !important;
-  pointer-events: auto !important;
-}
-
-:deep(.xterm-screen) {
-  background-color: #1e1e1e !important;
-  width: 100% !important;
-  height: 100% !important;
-  display: flex !important;
-  flex-direction: column !important;
-}
-
-:deep(.xterm .xterm-selection) {
-  background-color: rgba(54, 99, 181, 0.35) !important;
-  border-radius: 2px;
-  mix-blend-mode: screen;
-}
-
-:deep(.xterm-selection-layer) {
-  background-color: rgba(54, 99, 181, 0.35) !important;
-}
-
-:deep(.xterm-helper-textarea) {
-  position: absolute !important;
-  left: -9999px !important;
-  top: -9999px !important;
-  width: 0 !important;
-  height: 0 !important;
-  opacity: 0 !important;
-  overflow: hidden !important;
-  z-index: -1 !important;
-  pointer-events: none !important;
-}
-
-/* 滚动条样式 */
-:deep(.xterm-viewport::-webkit-scrollbar) {
-  width: 12px;
-}
-
-:deep(.xterm-viewport::-webkit-scrollbar-track) {
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 6px;
-  margin: 2px;
-}
-
-:deep(.xterm-viewport::-webkit-scrollbar-thumb) {
-  background: rgba(255, 255, 255, 0.3);
-  border-radius: 6px;
-  border: 2px solid transparent;
-  background-clip: content-box;
-  transition: background 0.2s ease;
-}
-
-:deep(.xterm-viewport::-webkit-scrollbar-thumb:hover) {
-  background: rgba(255, 255, 255, 0.5);
-}
-
-/* 右键菜单样式 - Apple MacOS 风格 */
-.context-menu {
-  position: fixed;
-  background: rgba(30, 30, 30, 0.75);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-  z-index: 1000;
-  min-width: 140px;
-  padding: 6px 0;
-  animation: fadeIn 0.15s ease-in-out;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: scale(0.95) translateY(-2px); }
-  to { opacity: 1; transform: scale(1) translateY(0); }
-}
-
-.menu-item {
-  display: flex;
-  align-items: center;
-  padding: 6px 12px;
-  margin: 2px 6px;
-  cursor: pointer;
-  color: #f5f5f5;
-  font-size: 13px;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  border-radius: 6px;
-  transition: all 0.1s ease;
-  gap: 10px;
-}
-
-.menu-item:hover {
-  background-color: #0a84ff; /* Apple Blue */
-  color: #ffffff;
-}
-
-.menu-item.disabled {
-  color: rgba(255, 255, 255, 0.3);
-  cursor: not-allowed;
-}
-
-.menu-item.disabled:hover {
-  background-color: transparent;
-}
 </style>
