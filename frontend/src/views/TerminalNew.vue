@@ -1392,33 +1392,47 @@ onUnmounted(() => {
   background: rgba(255, 255, 255, 0.5);
 }
 
+/* 右键菜单样式 - Apple MacOS 风格 */
 .context-menu {
   position: fixed;
-  background: #2d2d30;
-  border: 1px solid #3e3e42;
-  border-radius: 4px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  background: rgba(30, 30, 30, 0.75);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
   z-index: 1000;
-  min-width: 160px;
+  min-width: 140px;
   padding: 6px 0;
+  animation: fadeIn 0.15s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.95) translateY(-2px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
 }
 
 .menu-item {
   display: flex;
   align-items: center;
-  padding: 8px 16px;
+  padding: 6px 12px;
+  margin: 2px 6px;
   cursor: pointer;
-  color: #ffffff;
+  color: #f5f5f5;
   font-size: 13px;
-  transition: background-color 0.2s ease;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  border-radius: 6px;
+  transition: all 0.1s ease;
+  gap: 10px;
 }
 
 .menu-item:hover {
-  background-color: rgba(58, 134, 255, 0.2);
+  background-color: #0a84ff; /* Apple Blue */
+  color: #ffffff;
 }
 
 .menu-item.disabled {
-  color: #6c6c6c;
+  color: rgba(255, 255, 255, 0.3);
   cursor: not-allowed;
 }
 

@@ -36,51 +36,14 @@
         
         <!-- 终端内容区域 -->
         <el-main class="terminal-main" :style="{ width: showSftp ? `calc(100% - ${sftpPanelWidth}px)` : '100%' }">
-          <div 
+          <!-- 终端显示组件 (带有内置的右键菜单) -->
+          <XtermTerminal 
             ref="terminalRef" 
-            class="terminal" 
-            @click="focusTerminal"
-            @contextmenu.prevent="showContextMenu"
-          ></div>
-          
-          <!-- 右键菜单 -->
-          <div 
-            v-if="contextMenu.visible" 
-            class="context-menu" 
-            :style="{ 
-              left: contextMenu.x + 'px', 
-              top: contextMenu.y + 'px' 
-            }"
-            @mouseleave="hideContextMenu"
-          >
-            <div 
-              class="menu-item" 
-              @click="copyFromContextMenu"
-              :class="{ disabled: !hasSelection }"
-            >
-              <el-icon><DocumentCopy /></el-icon>
-              <span>复制</span>
-            </div>
-            <div class="menu-divider"></div>
-            <div 
-              class="menu-item" 
-              @click="pasteFromContextMenu"
-              :class="{ disabled: !isConnected }"
-            >
-              <el-icon><DocumentAdd /></el-icon>
-              <span>粘贴</span>
-            </div>
-            <div class="menu-divider"></div>
-            <div class="menu-item" @click="selectAllFromContextMenu">
-              <el-icon><Select /></el-icon>
-              <span>全选</span>
-            </div>
-            <div class="menu-divider"></div>
-            <div class="menu-item" @click="clearTerminal">
-              <el-icon><Delete /></el-icon>
-              <span>清屏</span>
-            </div>
-          </div>
+            :is-connected="isConnected"
+            @data="handleTerminalData"
+            @resize="handleTerminalResize"
+            @selection-change="hasSelection = $event"
+          />
           
           <!-- 连接提示 -->
           <div v-if="isConnecting" class="connection-status-overlay">
@@ -132,17 +95,14 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Terminal } from 'xterm'
-import { FitAddon } from 'xterm-addon-fit'
-import { WebLinksAddon } from 'xterm-addon-web-links'
-import 'xterm/css/xterm.css'
-import { ArrowLeft, Connection, Close, Delete, Monitor, Folder, Document, Edit, DocumentCopy, DocumentAdd, Select, Tickets, Loading } from '@element-plus/icons-vue'
+import { ArrowLeft, Connection, Close, Delete, Monitor, Folder, Document, Edit, Select, Tickets, Loading } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useQuickSftp } from '@/composables/useQuickSftp'
 import { ElMessage } from 'element-plus'
 import QuickSftpFileManager from '@/components/QuickSftpFileManager.vue'
 import CommandLibrary from '@/components/CommandLibrary.vue'
 import TerminalStatusBar from '@/components/TerminalStatusBar.vue'
+import XtermTerminal from '@/components/XtermTerminal.vue'
 import { io } from 'socket.io-client'
 
 const props = defineProps({
@@ -167,6 +127,7 @@ const sftpPanelWidth = ref(350)
 
 // 常用命令显示控制
 const showCommands = ref(false)
+const hasSelection = ref(false)
 
 // 向终端注入并执行命令
 const injectCommand = (cmd) => {
@@ -178,26 +139,13 @@ const injectCommand = (cmd) => {
   }
 }
 
-// 右键菜单相关
-const contextMenu = ref({
-  visible: false,
-  x: 0,
-  y: 0
-})
-
-let term = null
-let fitAddon = null
-let initialScrollTop = 0
-let wheelHandler = null
-let viewportWheelHandler = null
-let isComposing = false
-let pingInterval = null // Added pingInterval as per instruction diff
+let socket = null
+let pingInterval = null
 
 // 本地连接状态
 const isConnected = ref(false)
 const isConnecting = ref(false)
 const connectionError = ref(null)
-let socket = null
 
 // 连接显示信息
 const connectionDisplay = computed(() => {
@@ -217,218 +165,22 @@ const goBack = () => {
   emit('close')
 }
 
-// 初始化终端
-const initTerminal = () => {
-  term = new Terminal({
-    cursorBlink: true,
-    fontSize: 14,
-    fontFamily: 'Courier New, monospace',
-    theme: {
-      background: '#1e1e1e',
-      foreground: '#ffffff',
-      cursor: '#ffffff',
-      cursorAccent: '#ffffff',
-      selection: 'rgba(58, 134, 255, 0.3)',
-      selectionForeground: undefined
-    },
-    disableStdin: false,
-    scrollback: 10000,
-    convertEol: true,
-    allowTransparency: false,
-    tabStopWidth: 8,
-    cursorStyle: 'block',
-    bellStyle: 'sound',
-    allowProposedApi: true,
-    windowsMode: true,
-    screenReaderMode: false,
-    scrollOnUserInput: true,
-    scrollOnOutput: false,
-    scrollSensitivity: 3,
-    smoothScrollDuration: 0,
-    fastScrollSensitivity: 5,
-    fastScrollModifier: 'alt',
-    macOptionIsMeta: false,
-    macOptionClickForcesSelection: false,
-    rightClickSelectsWord: false,
-    rendererType: 'canvas',
-  })
+const handleTerminalData = (data) => {
+  if (isConnected.value && socket) {
+    socket.emit('ssh-input', data)
+  }
+}
 
-  fitAddon = new FitAddon()
-  term.loadAddon(fitAddon)
-  
-  const webLinksAddon = new WebLinksAddon()
-  term.loadAddon(webLinksAddon)
-  
-    if (terminalRef.value) {
-      term.open(terminalRef.value)
-      fitAddon.fit()
-      
-      term.focus()
-      
-      // IME 修复（与 Terminal.vue 相同）
-      const setupHelperTextarea = () => {
-        const textarea = terminalRef.value?.querySelector('.xterm-helper-textarea')
-        if (textarea && !textarea._imeFixed) {
-          textarea._imeFixed = true
-
-          textarea.style.opacity = '0'
-          textarea.style.color = 'transparent'
-          textarea.style.position = 'absolute'
-          textarea.style.bottom = '4px'
-          textarea.style.left = '4px'
-          textarea.style.width = '1px'
-          textarea.style.height = '1px'
-          textarea.style.zIndex = '1'
-          textarea.style.caretColor = 'transparent'
-
-          textarea.addEventListener('compositionstart', (e) => {
-            isComposing = true
-            e.stopImmediatePropagation()
-          }, true)
-
-          textarea.addEventListener('compositionupdate', (e) => {
-            e.stopImmediatePropagation()
-          }, true)
-
-          textarea.addEventListener('compositionend', (e) => {
-            e.stopImmediatePropagation()
-            isComposing = false
-            const text = e.data
-            if (text && isConnected.value && socket) {
-              socket.emit('ssh-input', text)
-            }
-            Promise.resolve().then(() => { textarea.value = '' })
-          }, true)
-        }
-      }
-      
-      setupHelperTextarea()
-      
-      const observer = new MutationObserver((mutations) => {
-        mutations.forEach((mutation) => {
-          if (mutation.type === 'childList') {
-            setupHelperTextarea()
-          }
-        })
-      })
-      
-      observer.observe(terminalRef.value, { childList: true, subtree: true })
-      
-      // 处理终端输入
-      term.onData((data) => {
-        if (isComposing) {
-          return
-        }
-        if (isConnected.value && socket) {
-          socket.emit('ssh-input', data)
-        } else {
-          term.write('\r\n\x1b[31m未连接到服务器\x1b[0m\r\n')
-        }
-      })
-      
-      // 优化鼠标滚轮事件处理
-      const enableWheelScroll = () => {
-        const viewport = terminalRef.value?.querySelector('.xterm-viewport')
-        if (viewport) {
-          if (viewportWheelHandler) {
-            viewport.removeEventListener('wheel', viewportWheelHandler)
-          }
-          
-          viewportWheelHandler = (event) => {
-            event.preventDefault()
-            const deltaY = event.deltaY
-            const deltaMode = event.deltaMode
-            
-            if (deltaMode === 0) {
-              const scrollAmount = Math.sign(deltaY) * Math.ceil(Math.abs(deltaY) / 8)
-              viewport.scrollTop += scrollAmount * 20
-            } else if (deltaMode === 1) {
-              viewport.scrollTop += deltaY * 20
-            } else {
-              viewport.scrollTop += deltaY * viewport.clientHeight
-            }
-          }
-          
-          viewport.addEventListener('wheel', viewportWheelHandler, { passive: false })
-          
-          viewport.style.overflowY = 'auto'
-          viewport.style.overflowX = 'hidden'
-        }
-      }
-      
-      enableWheelScroll()
-      
-      const wheelObserver = new MutationObserver(() => {
-        enableWheelScroll()
-      })
-      wheelObserver.observe(terminalRef.value, { childList: true, subtree: true })
-      
-      wheelHandler = (e) => {
-        const viewport = terminalRef.value?.querySelector('.xterm-viewport')
-        if (viewport) {
-          e.preventDefault()
-          viewport.scrollTop += e.deltaY
-        }
-      }
-      terminalRef.value.addEventListener('wheel', wheelHandler, { passive: false })
-    
-    // 处理终端按键事件
-    term.attachCustomKeyEventHandler((event) => {
-      if ((event.ctrlKey || event.metaKey) && 
-          !['c', 'v', 'a', 'z', 'x', 'y'].includes(event.key.toLowerCase())) {
-        event.preventDefault()
-      }
-      return true
-    })
-    
-    // 防止空格触发容器或页面滚动
-    term.attachCustomKeyEventHandler((event) => {
-      if (event.code === 'Space' || event.key === ' ') {
-        event.preventDefault()
-        if (isConnected.value && socket) {
-          socket.emit('ssh-input', ' ')
-          term.scrollToBottom()
-        }
-        return false
-      }
-      return true
-    })
-    
-    // 添加粘贴支持
-    term.attachCustomKeyEventHandler((event) => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v') {
-        event.preventDefault()
-        navigator.clipboard.readText().then(text => {
-          if (isConnected.value && socket) {
-            socket.emit('ssh-input', text)
-          }
-        }).catch(err => {
-          console.warn('粘贴失败:', err)
-        })
-        return false
-      }
-      return true
-    })
-    
-    // 添加复制支持
-    term.attachCustomKeyEventHandler((event) => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
-        const selection = term.getSelection()
-        if (selection) {
-          navigator.clipboard.writeText(selection).catch(err => {
-            console.warn('复制失败:', err)
-          })
-        }
-      }
-      return true
-    })
+const handleTerminalResize = (dimensions) => {
+  if (isConnected.value && socket) {
+    socket.emit('resize', dimensions)
   }
 }
 
 // 聚焦终端
 const focusTerminal = () => {
-  if (term) {
-    term.focus()
+  if (terminalRef.value) {
+    terminalRef.value.focus()
   }
 }
 
@@ -460,120 +212,6 @@ const connectSftp = async () => {
   }
 }
 
-// 右键菜单相关功能
-const showContextMenu = (event) => {
-  event.preventDefault()
-  
-  contextMenu.value = {
-    visible: true,
-    x: event.clientX,
-    y: event.clientY
-  }
-}
-
-const hideContextMenu = () => {
-  contextMenu.value.visible = false
-}
-
-// 全局点击关闭右键菜单
-const onDocumentClick = () => {
-  if (contextMenu.value.visible) {
-    hideContextMenu()
-  }
-}
-
-const hasSelection = () => {
-  return term && term.getSelection() && term.getSelection().length > 0
-}
-
-const copyFromContextMenu = async () => {
-  if (term && hasSelection()) {
-    const selection = term.getSelection()
-    try {
-      await navigator.clipboard.writeText(selection)
-      ElMessage.success(`已复制 ${selection.length} 个字符`)
-      hideContextMenu()
-    } catch (error) {
-      console.warn('复制失败:', error)
-      ElMessage.error('复制失败，请重试')
-    }
-  }
-}
-
-const pasteFromContextMenu = async () => {
-  if (term && isConnected.value && socket) {
-    try {
-      const text = await navigator.clipboard.readText()
-      socket.emit('ssh-input', text)
-      hideContextMenu()
-    } catch (error) {
-      console.warn('粘贴失败:', error)
-      ElMessage.error('粘贴失败，请重试')
-    }
-  }
-}
-
-const selectAllFromContextMenu = () => {
-  if (term) {
-    term.selectAll()
-    hideContextMenu()
-  }
-}
-
-const clearTerminal = () => {
-  resetConnectedState()
-}
-
-const copySelected = async () => {
-  if (term) {
-    const selection = term.getSelection()
-    if (selection) {
-      try {
-        await navigator.clipboard.writeText(selection)
-        
-        const copyButton = document.querySelector('.copy-button')
-        if (copyButton) {
-          copyButton.classList.add('copied')
-          setTimeout(() => {
-            copyButton.classList.remove('copied')
-          }, 1000)
-        }
-        
-        ElMessage.success(`已复制 ${selection.length} 个字符`)
-      } catch (error) {
-        console.warn('复制失败:', error)
-        ElMessage.error('复制失败，请重试')
-      }
-    } else {
-      ElMessage.warning('请先选中要复制的文本')
-    }
-  }
-}
-
-const pasteFromClipboard = async () => {
-  try {
-    const text = await navigator.clipboard.readText()
-    if (text && isConnected.value && socket) {
-      socket.emit('ssh-input', text)
-    }
-  } catch (e) {}
-}
-
-const resetConnectedState = () => {
-  if (term) {
-    term.reset()
-    term.focus()
-    term.write('\x1b[?25h')
-    if (typeof term.scrollToTop === 'function') {
-      term.scrollToTop()
-    }
-    const viewport = terminalRef.value?.querySelector('.xterm-viewport')
-    if (viewport) {
-      viewport.scrollTop = initialScrollTop || 0
-    }
-  }
-}
-
 // 连接到服务器的新逻辑
 const connectToServer = () => {
   isConnecting.value = true
@@ -602,9 +240,9 @@ const connectToServer = () => {
   socket.on('ssh-connected', () => {
     isConnected.value = true
     isConnecting.value = false
-    if (term) {
-      term.clear()
-      term.focus()
+    if (terminalRef.value) {
+      terminalRef.value.clear()
+      terminalRef.value.focus()
       setTimeout(() => {
         handleResize()
       }, 200)
@@ -612,8 +250,8 @@ const connectToServer = () => {
   })
   
   socket.on('ssh-data', (data) => {
-    if (term) {
-      term.write(typeof data === 'string' ? data : String(data))
+    if (terminalRef.value) {
+      terminalRef.value.write(typeof data === 'string' ? data : String(data))
     }
   })
   
@@ -626,8 +264,8 @@ const connectToServer = () => {
     isConnecting.value = false
     quickSftp.disconnectSftp() // Changed from sftpStore.disconnectSftp()
     showSftp.value = false
-    if (term) {
-      term.write('\r\n\x1b[31mSSH连接已断开\x1b[0m\r\n')
+    if (terminalRef.value) {
+      terminalRef.value.writeError('SSH连接已断开')
     }
   })
   
@@ -640,44 +278,24 @@ const connectToServer = () => {
 const handleError = (msg) => {
   isConnecting.value = false
   connectionError.value = msg
-  if (term) {
-    term.write(`\r\n\x1b[31m连接错误: ${msg}\x1b[0m\r\n`)
+  if (terminalRef.value) {
+    terminalRef.value.writeError(`连接错误: ${msg}`)
   }
 }
 
 // 监听窗口大小变化
 const handleResize = () => {
-  if (fitAddon && term) {
-    fitAddon.fit()
-    
-    const dimensions = fitAddon.proposeDimensions()
-    if (dimensions) {
-      // 故意减少 1 行，在底部留出真实的换行空间，避免贴底
-      const adjustedRows = Math.max(1, dimensions.rows - 1)
-      
-      if (isConnected.value && socket) {
-        socket.emit('resize', {
-          rows: adjustedRows,
-          cols: dimensions.cols,
-          height: dimensions.height,
-          width: dimensions.width
-        })
-      }
-      
-      term.resize(dimensions.cols, adjustedRows)
-    }
+  if (terminalRef.value) {
+    terminalRef.value.fit()
   }
 }
 
 onMounted(async () => {
   await nextTick()
-  initTerminal()
-  
   window.addEventListener('resize', handleResize)
-  document.addEventListener('click', onDocumentClick)
   
-  if (term) {
-    term.write('\x1b[33m正在初始化连接...\x1b[0m\r\n')
+  if (terminalRef.value) {
+    terminalRef.value.writeWarning('正在初始化连接...')
   }
   
   connectToServer()
@@ -686,12 +304,6 @@ onMounted(async () => {
 onUnmounted(() => {
   if (pingInterval) {
     clearInterval(pingInterval)
-  }
-  
-  // 销毁终端
-  if (term) {
-    term.dispose()
-    term = null
   }
   
   // 销毁组件内部的 Socket 连接
@@ -704,17 +316,7 @@ onUnmounted(() => {
   if (quickSftp.isConnected.value) {
     quickSftp.disconnectSftp()
   }
-  if (terminalRef.value && wheelHandler) {
-    terminalRef.value.removeEventListener('wheel', wheelHandler)
-    wheelHandler = null
-  }
-  const viewportEl = terminalRef.value?.querySelector('.xterm-viewport')
-  if (viewportEl && viewportWheelHandler) {
-    viewportEl.removeEventListener('wheel', viewportWheelHandler)
-    viewportWheelHandler = null
-  }
   window.removeEventListener('resize', handleResize)
-  document.removeEventListener('click', onDocumentClick)
 })
 </script>
 
@@ -722,7 +324,7 @@ onUnmounted(() => {
 .terminal-page {
   height: 100%;
   overflow: hidden;
-  background-color: #1e1e1e;
+  background-color: #1c1c1e;
   display: flex;
   flex-direction: column;
 }
@@ -731,7 +333,7 @@ onUnmounted(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background-color: #1e1e1e;
+  background-color: #1c1c1e;
 }
 
 .terminal-header {
@@ -930,49 +532,6 @@ onUnmounted(() => {
   font-weight: normal;
 }
 
-/* 右键菜单样式 */
-.context-menu {
-  position: fixed;
-  background: #2d2d30;
-  border: 1px solid #3e3e42;
-  border-radius: 4px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  z-index: 1000;
-  min-width: 120px;
-  padding: 4px 0;
-  animation: fadeIn 0.15s ease-in-out;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: scale(0.95); }
-  to { opacity: 1; transform: scale(1); }
-}
-
-.menu-item {
-  display: flex;
-  align-items: center;
-  padding: 8px 16px;
-  cursor: pointer;
-  color: #ffffff;
-  font-size: 13px;
-  transition: background-color 0.2s ease;
-  gap: 8px;
-}
-
-.menu-item:hover {
-  background-color: rgba(58, 134, 255, 0.2);
-}
-
-.menu-item.disabled {
-  color: #6c6c6c;
-  cursor: not-allowed;
-}
-
-.menu-item.clickable:hover {
-  background-color: #f0f2f5;
-  color: var(--el-color-primary);
-}
-
 /* 常用命令抽屉样式 */
 .command-list-container {
   display: flex;
@@ -1090,176 +649,11 @@ onUnmounted(() => {
   color: #303133;
 }
 
-.menu-divider {
-  height: 1px;
-  background-color: #3e3e42;
-  margin: 4px 0;
-}
-
-.menu-item .el-icon {
+.cmd-name {
   font-size: 14px;
-  width: 16px;
+  font-weight: 500;
+  color: #303133;
 }
 
-
-
-/* XTerm.js 样式调整 */
-:deep(.xterm) {
-  padding: 10px;
-  position: relative;
-}
-
-:deep(.xterm-viewport) {
-  background-color: #1e1e1e !important;
-}
-
-:deep(.xterm-screen) {
-  background-color: #1e1e1e !important;
-}
-
-/* 强制在 xterm-screen 后方追加一段空白，确保滚动到底部时有足够间距 */
-:deep(.xterm-screen::after) {
-  content: "";
-  display: block;
-  height: 32px;
-  width: 100%;
-}
-
-:deep(.xterm-helper-textarea) {
-  opacity: 0 !important;
-  color: transparent !important;
-  caret-color: transparent !important;
-  resize: none !important;
-  outline: none !important;
-  border: none !important;
-  padding: 0 !important;
-  margin: 0 !important;
-}
-
-.copy-button {
-  transition: all 0.3s ease;
-}
-
-.copy-button.copied {
-  background-color: rgba(58, 134, 255, 0.3) !important;
-  border-color: rgba(58, 134, 255, 0.8) !important;
-  color: #ffffff !important;
-  transform: scale(1.05);
-  box-shadow: 0 0 15px rgba(58, 134, 255, 0.4);
-}
-
-.copy-button:hover {
-  background-color: rgba(58, 134, 255, 0.1);
-  border-color: rgba(58, 134, 255, 0.6);
-}
-
-:deep(.xterm .xterm-selection) {
-  background-color: rgba(58, 134, 255, 0.2) !important;
-  border-radius: 2px;
-  mix-blend-mode: screen;
-}
-
-:deep(.xterm) {
-  padding: 0 !important;
-  overflow: hidden !important;
-  position: relative !important;
-  height: 100% !important;
-  width: 100% !important;
-  display: flex !important;
-  flex-direction: column !important;
-}
-
-:deep(.xterm-screen) {
-  background-color: #1e1e1e !important;
-  width: 100% !important;
-  height: 100% !important;
-  display: flex !important;
-  flex-direction: column !important;
-}
-
-:deep(.xterm-viewport) {
-  background-color: #1e1e1e !important;
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.3) rgba(255, 255, 255, 0.1);
-  position: relative !important;
-  direction: ltr !important;
-  width: 100% !important;
-  height: 100% !important;
-  pointer-events: auto !important;
-}
-
-:deep(.xterm-viewport::-webkit-scrollbar) {
-  width: 12px;
-}
-
-:deep(.xterm-viewport::-webkit-scrollbar-track) {
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 6px;
-  margin: 2px;
-}
-
-:deep(.xterm-viewport::-webkit-scrollbar-thumb) {
-  background: rgba(255, 255, 255, 0.3);
-  border-radius: 6px;
-  border: 2px solid transparent;
-  background-clip: content-box;
-  transition: background 0.2s ease;
-}
-
-:deep(.xterm-viewport::-webkit-scrollbar-thumb:hover) {
-  background: rgba(255, 255, 255, 0.5);
-}
-
-:deep(.xterm-viewport::-webkit-scrollbar-thumb:active) {
-  background: rgba(255, 255, 255, 0.7);
-}
-
-:deep(.xterm-screen) {
-  overflow: visible !important;
-  width: 100% !important;
-  height: 100% !important;
-  background-color: #1e1e1e !important;
-}
-
-:deep(.xterm-scroll-area) {
-  overflow: visible !important;
-}
-
-:deep(.xterm-char-measure-element) {
-  position: absolute !important;
-  left: -9999px !important;
-  top: -9999px !important;
-  visibility: hidden !important;
-  width: auto !important;
-  height: auto !important;
-  opacity: 0 !important;
-  pointer-events: none !important;
-}
-
-.terminal {
-  position: relative;
-  overflow: hidden;
-  pointer-events: auto !important;
-  height: 100%;
-  width: 100%;
-  background-color: #1e1e1e !important;
-  display: flex;
-  flex-direction: column;
-}
-
-:deep(.xterm-rows) {
-  color: #ffffff !important;
-  background-color: #1e1e1e !important;
-}
-
-:deep(.xterm-row) {
-  color: #ffffff !important;
-  background-color: #1e1e1e !important;
-}
-
-:deep(.xterm-selection-layer) {
-  background-color: rgba(54,99,181,0.35) !important;
-}
+/* Command list and other specific QuickConnect styles */
 </style>
