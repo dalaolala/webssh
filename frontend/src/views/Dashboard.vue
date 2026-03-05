@@ -268,14 +268,26 @@ const handleServerClick = (data, node) => {
   if (data.type === 'server') {
     router.push(`/terminal/${data.serverId}`)
   } else if (data.type === 'group' && node) {
-    node.expanded = !node.expanded
+    if (node.expanded) {
+      node.expanded = false
+      handleNodeCollapse(data)
+    } else {
+      node.expanded = true
+      handleNodeExpand(data)
+    }
   }
 }
 
 // 处理服务器双击
 const handleServerDblClick = (data, node) => {
   if (data.type === 'group' && node) {
-    node.expanded = !node.expanded
+    if (node.expanded) {
+      node.expanded = false
+      handleNodeCollapse(data)
+    } else {
+      node.expanded = true
+      handleNodeExpand(data)
+    }
   }
 }
 
