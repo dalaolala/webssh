@@ -15,6 +15,16 @@
           </el-button>
         </div>
         
+        <!-- 搜索框 -->
+        <div class="server-search">
+          <el-input
+            v-model="searchQuery"
+            placeholder="搜索服务器..."
+            clearable
+            :prefix-icon="Search"
+          />
+        </div>
+        
         <!-- 服务器树型结构 -->
         <div class="server-tree">
           <el-tree
@@ -221,7 +231,8 @@ import {
   Monitor,
   Folder,
   Back,
-  Tickets
+  Tickets,
+  Search
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useTerminalStore } from '@/stores/terminal'
@@ -241,6 +252,9 @@ const tabs = ref([])
 const activeTabId = ref(null)
 const contextMenu = ref({ visible: false, x: 0, y: 0, tabId: null })
 
+// 搜索文本
+const searchQuery = ref('')
+
 // 常用命令显示控制
 const showCommands = ref(false)
 
@@ -253,7 +267,18 @@ const activeTab = computed(() => {
 const serverTreeData = computed(() => {
   const groups = {}
   
-  serversStore.servers.forEach(server => {
+  // 过滤服务器列表
+  let filteredServers = serversStore.servers
+  if (searchQuery.value) {
+    const q = searchQuery.value.toLowerCase()
+    filteredServers = filteredServers.filter(server => {
+      return server.name?.toLowerCase().includes(q) || 
+             server.host?.toLowerCase().includes(q) ||
+             server.group_name?.toLowerCase().includes(q)
+    })
+  }
+
+  filteredServers.forEach(server => {
     const groupName = server.group_name || '默认分组'
     if (!groups[groupName]) {
       groups[groupName] = []
@@ -536,24 +561,28 @@ const hideHelperTextarea = (tabId) => {
 }
 
 // 处理树节点单击（直接创建新页签）
-const handleTreeNodeClick = (data) => {
+const handleTreeNodeClick = (data, node) => {
   if (data.type === 'server') {
     const server = serversStore.servers.find(s => s.id === data.serverId)
     if (server) {
       // 单击时直接创建新页签
       createNewTabForServer(server)
     }
+  } else if (data.type === 'group' && node) {
+    node.expanded = !node.expanded
   }
 }
 
 // 处理树节点双击（功能与单击相同，提供一致性）
-const handleTreeNodeDblClick = (data) => {
+const handleTreeNodeDblClick = (data, node) => {
   if (data.type === 'server') {
     const server = serversStore.servers.find(s => s.id === data.serverId)
     if (server) {
       // 双击时也创建新页签
       createNewTabForServer(server)
     }
+  } else if (data.type === 'group' && node) {
+    node.expanded = !node.expanded
   }
 }
 
@@ -983,6 +1012,21 @@ onUnmounted(() => {
   font-size: 16px;
   font-weight: 600;
   letter-spacing: 0.5px;
+}
+
+.server-search {
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(62, 62, 66, 0.6);
+  background: rgba(30, 30, 30, 0.4);
+}
+
+.server-search :deep(.el-input__wrapper) {
+  background-color: rgba(0, 0, 0, 0.2);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+}
+
+.server-search :deep(.el-input__inner) {
+  color: #e0e0e0;
 }
 
 /* 树型结构样式 */

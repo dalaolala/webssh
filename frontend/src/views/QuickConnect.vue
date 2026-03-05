@@ -681,52 +681,56 @@ onMounted(() => {
   display: flex; /* Ensure the children (aside and main) flow correctly */
 }
 
-/* 左侧栏样式 */
-.history-aside {
-  background: white;
-  border-right: 1px solid #e4e7ed;
-  display: flex;
-  flex-direction: column;
-}
-
-.aside-header {
-  padding: 15px 20px;
-  border-bottom: 1px solid #ebeef5;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.history-search {
-  padding: 10px 20px;
-  border-bottom: 1px solid #ebeef5;
-}
-
-.aside-title {
-}
-
 /* 左侧历史树 */
 .history-aside {
-  background: white;
-  border-right: 1px solid #e4e7ed;
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-right: 1px solid rgba(0, 0, 0, 0.1);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  padding: 8px 12px;
 }
 
 .aside-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 16px 12px;
-  border-bottom: 1px solid #f0f0f0;
+  padding: 12px 6px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
   flex-shrink: 0;
 }
 
+.history-search {
+  padding: 12px 4px 8px;
+}
+
+.history-search :deep(.el-input__wrapper) {
+  background-color: rgba(0, 0, 0, 0.05);
+  border-radius: 8px;
+  box-shadow: none !important;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  transition: all 0.2s;
+}
+
+.history-search :deep(.el-input__wrapper.is-focus) {
+  background-color: rgba(255, 255, 255, 1);
+  border-color: #007AFF;
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.2) !important;
+}
+
+.history-search :deep(.el-input__inner) {
+  color: #1c1c1e;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
 .aside-title {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
-  color: #303133;
+  color: #1c1c1e;
+  letter-spacing: -0.5px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
 .aside-actions {
@@ -758,20 +762,21 @@ onMounted(() => {
 .tree-node {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   width: 100%;
-  padding: 2px 0;
+  padding: 4px 6px;
   font-size: 13px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
 .tree-folder-icon {
-  color: #e6a23c;
+  color: #1c1c1e;
   font-size: 16px;
   flex-shrink: 0;
 }
 
 .tree-server-icon {
-  color: #409eff;
+  color: #007AFF;
   font-size: 14px;
   flex-shrink: 0;
 }
@@ -781,11 +786,13 @@ onMounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #303133;
+  color: #1c1c1e;
+  font-weight: 500;
 }
 
 .tree-node.is-leaf .tree-node-label {
-  color: #606266;
+  color: #1c1c1e;
+  font-weight: normal;
 }
 
 .tree-node-actions {
@@ -808,20 +815,41 @@ onMounted(() => {
 .tree-delete-btn {
   width: 20px !important;
   height: 20px !important;
+  background-color: transparent;
+  border-color: rgba(255, 255, 255, 0.4);
 }
 
 /* Element Tree 深度覆盖 */
+:deep(.el-tree) {
+  background: transparent;
+}
+
 :deep(.el-tree-node__content) {
-  height: 36px;
-  padding-right: 8px !important;
+  height: auto !important;
+  padding: 4px 6px !important;
+  margin-bottom: 2px !important;
+  border-radius: 8px;
+  transition: all 0.2s ease !important;
 }
 
 :deep(.el-tree-node__content:hover) {
-  background-color: #f5f7fa;
+  background-color: rgba(0, 0, 0, 0.06) !important;
 }
 
-:deep(.el-tree--highlight-current .el-tree-node.is-current > .el-tree-node__content) {
-  background-color: #ecf5ff;
+/* Tree Selection Highlights */
+:deep(.el-tree--highlight-current .el-tree-node.is-current > .el-tree-node__content:has(.is-leaf)) {
+  background-color: #007AFF !important;
+  color: white;
+}
+
+:deep(.el-tree--highlight-current .el-tree-node.is-current > .el-tree-node__content:has(.is-leaf) .tree-node-label),
+:deep(.el-tree--highlight-current .el-tree-node.is-current > .el-tree-node__content:has(.is-leaf) .tree-server-icon) {
+  color: white !important;
+}
+
+:deep(.el-tree--highlight-current .el-tree-node.is-current > .el-tree-node__content:has(.is-leaf) .tree-delete-btn:hover) {
+  background-color: rgba(255, 255, 255, 0.2);
+  color: white;
 }
 
 /* 右侧表单 */

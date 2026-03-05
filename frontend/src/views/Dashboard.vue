@@ -53,6 +53,15 @@
           </el-button>
         </div>
         
+        <div class="server-search">
+          <el-input
+            v-model="searchQuery"
+            placeholder="搜索服务器..."
+            clearable
+            :prefix-icon="Search"
+          />
+        </div>
+        
         <div class="server-list">
           <el-tree
             :data="serverTree"
@@ -60,6 +69,7 @@
             :default-expanded-keys="expandedKeys"
             :expand-on-click-node="false"
             @node-click="handleServerClick"
+            @node-dblclick="handleServerDblClick"
             @node-expand="handleNodeExpand"
             @node-collapse="handleNodeCollapse"
           >
@@ -178,7 +188,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Folder, Monitor, Connection, Lock, More, Edit, Delete, User, SwitchButton, UserFilled } from '@element-plus/icons-vue'
+import { Plus, Folder, Monitor, Connection, Lock, More, Edit, Delete, User, SwitchButton, UserFilled, Search } from '@element-plus/icons-vue'
 import { useServersStore } from '@/stores/servers'
 import { useAuthStore } from '@/stores/auth'
 import ServerForm from '@/components/ServerForm.vue'
@@ -191,6 +201,7 @@ const showAddServerDialog = ref(false)
 const showEditServerDialog = ref(false)
 const editingServerId = ref(null)
 const editingServerName = ref('')
+const searchQuery = ref('')
 
 // 分组展开状态持久化 (sessionStorage)
 const EXPANDED_KEYS_STORAGE_KEY = 'webssh_dashboard_expanded_keys'
@@ -216,8 +227,18 @@ const handleNodeCollapse = (data) => {
 const serverTree = computed(() => {
   const groups = {}
   
+  let filteredServers = serversStore.servers
+  if (searchQuery.value) {
+    const q = searchQuery.value.toLowerCase()
+    filteredServers = filteredServers.filter(server => {
+      return server.name?.toLowerCase().includes(q) || 
+             server.host?.toLowerCase().includes(q) ||
+             server.group_name?.toLowerCase().includes(q)
+    })
+  }
+  
   // 按分组组织服务器
-  serversStore.servers.forEach(server => {
+  filteredServers.forEach(server => {
     const groupName = server.group_name || 'Default'
     if (!groups[groupName]) {
       groups[groupName] = []
@@ -243,9 +264,18 @@ const serverTree = computed(() => {
 })
 
 // 处理服务器点击
-const handleServerClick = (data) => {
+const handleServerClick = (data, node) => {
   if (data.type === 'server') {
     router.push(`/terminal/${data.serverId}`)
+  } else if (data.type === 'group' && node) {
+    node.expanded = !node.expanded
+  }
+}
+
+// 处理服务器双击
+const handleServerDblClick = (data, node) => {
+  if (data.type === 'group' && node) {
+    node.expanded = !node.expanded
   }
 }
 
@@ -393,9 +423,11 @@ onMounted(async () => {
 }
 
 .sidebar {
-  background: white;
-  border-right: 1px solid #e4e7ed;
-  padding: 20px;
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-right: 1px solid rgba(0, 0, 0, 0.1);
+  padding: 24px 20px;
   display: flex;
   flex-direction: column;
 }
@@ -404,13 +436,39 @@ onMounted(async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  margin-bottom: 24px;
 }
 
 .sidebar-header h2 {
   margin: 0;
-  color: #333;
+  color: #1c1c1e;
   font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.5px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+.server-search {
+  margin-bottom: 20px;
+}
+
+.server-search :deep(.el-input__wrapper) {
+  background-color: rgba(0, 0, 0, 0.05);
+  border-radius: 8px;
+  box-shadow: none !important;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  transition: all 0.2s;
+}
+
+.server-search :deep(.el-input__wrapper.is-focus) {
+  background-color: rgba(255, 255, 255, 1);
+  border-color: #007AFF;
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.2) !important;
+}
+
+.server-search :deep(.el-input__inner) {
+  color: #1c1c1e;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
 .server-list {
@@ -420,11 +478,48 @@ onMounted(async () => {
 }
 
 /* 树形组件样式调整 */
+:deep(.el-tree) {
+  background: transparent;
+}
+
 :deep(.el-tree-node__content) {
-  height: 56px !important;
-  padding: 0 16px !important;
-  margin-bottom: 0 !important;
-  transition: all 0.3s ease !important;
+  height: auto !important;
+  padding: 4px 8px !important;
+  margin-bottom: 2px !important;
+  border-radius: 8px;
+  transition: all 0.2s ease !important;
+}
+
+:deep(.el-tree-node__content:hover) {
+  background-color: rgba(0, 0, 0, 0.06) !important;
+}
+
+:deep(.el-tree-node.is-current > .el-tree-node__content:has(.server-node)) {
+  background-color: #007AFF !important;
+  color: white;
+}
+
+:deep(.el-tree-node.is-current > .el-tree-node__content:has(.group-node)) {
+  background-color: transparent !important;
+}
+
+:deep(.el-tree-node.is-current > .el-tree-node__content .server-node .server-name),
+:deep(.el-tree-node.is-current > .el-tree-node__content .server-node .server-address) {
+  color: white !important;
+}
+
+:deep(.el-tree-node.is-current > .el-tree-node__content .server-node .server-name:hover) {
+  color: white !important;
+}
+
+:deep(.el-tree-node.is-current > .el-tree-node__content .server-actions) {
+  background-color: transparent;
+  border-color: rgba(255, 255, 255, 0.4);
+  color: white;
+}
+
+:deep(.el-tree-node.is-current > .el-tree-node__content .server-actions:hover) {
+  background-color: rgba(255, 255, 255, 0.2);
 }
 
 :deep(.el-tree-node) {
@@ -435,16 +530,20 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   width: 100%;
-  padding: 6px 0;
+  padding: 2px 0;
   min-height: 48px;
   box-sizing: border-box;
 }
 
 .group-node {
   font-weight: 600;
-  color: #333;
-  padding: 8px 0;
-  min-height: 40px;
+  color: #1c1c1e;
+  padding: 8px 4px;
+  min-height: auto;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .server-node {
@@ -452,55 +551,55 @@ onMounted(async () => {
   justify-content: space-between;
   align-items: center;
   width: 100%;
-  padding: 8px;
-  border-radius: 4px;
-  transition: all 0.3s;
-  min-height: 56px;
+  padding: 6px;
+  border-radius: 6px;
+  min-height: auto;
   box-sizing: border-box;
 }
 
 .server-node:hover {
-  background-color: #f5f7fa;
+  background-color: transparent; /* rely on node content hover */
 }
 
 .server-info-wrapper {
   flex: 1;
-  margin: 0 8px;
+  margin: 0 10px;
   min-width: 0;
 }
 
 .server-name {
   font-weight: 500;
   font-size: 14px;
-  color: #333;
+  color: #1c1c1e;
   cursor: pointer;
   margin-bottom: 2px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
 .server-name:hover {
-  color: #409eff;
+  color: #007AFF;
 }
 
 .server-address {
   font-size: 11px;
-  color: #999;
-  opacity: 0.8;
+  color: rgba(28, 28, 30, 0.6);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
 .server-actions {
   padding: 4px 8px;
-  border: 1px solid #dcdfe6;
-  border-radius: 4px;
-  background-color: white;
-  color: #606266;
-  transition: all 0.3s;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 6px;
+  background-color: rgba(255, 255, 255, 0.8);
+  color: #1c1c1e;
+  transition: all 0.2s;
   white-space: nowrap;
 }
 
 .server-actions:hover {
-  border-color: #409eff;
-  color: #409eff;
-  background-color: #f0f7ff;
+  border-color: #007AFF;
+  color: #007AFF;
+  background-color: rgba(0, 122, 255, 0.1);
 }
 
 .action-text {
