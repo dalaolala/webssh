@@ -1,124 +1,98 @@
 const crypto = require('crypto');
-const dotenv = require('dotenv');
 
-dotenv.config();
+// 本地存储加密密钥（用于本地存储的加密）
+const LOCAL_STORAGE_KEY = 'webssh-quick-connect-local-2026';
 
-const ALGORITHM = 'aes-256-gcm';
-const IV_LENGTH = 16;
-const AUTH_TAG_LENGTH = 16;
-
-class EncryptionService {
-  constructor() {
-    let key = (process.env.ENCRYPTION_KEY || '').trim();
-    if (/^[0-9a-fA-F]{64}$/.test(key)) {
-      key = key.substring(0, 32);
-    }
-    if (!key || key.length !== 32) {
-      const raw = (process.env.ENCRYPTION_KEY || '').trim();
-      const preview = raw ? (raw.slice(0, 4) + '...' + raw.slice(-4)) : '(empty)';
-      const len = raw ? raw.length : 0;
-      let fingerprint = '';
-      try { fingerprint = crypto.createHash('sha256').update(raw).digest('hex').slice(0, 16); } catch {}
-      console.error('ENCRYPTION_KEY_RAW=', raw);
-      console.error('Invalid ENCRYPTION_KEY: length=%s, preview=%s, hex64=%s, fingerprint=%s', String(len), preview, /^[0-9a-fA-F]{64}$/.test(raw) ? 'true' : 'false', fingerprint);
-      if (String(process.env.ALLOW_WEAK_ENCRYPTION).toLowerCase() === 'true') {
-        const weak = (raw || '').padEnd(32, '0').slice(0, 32);
-        console.error('ALLOW_WEAK_ENCRYPTION enabled: using fallback key of length 32 to keep service alive');
-        this.encryptionKey = weak;
-        return;
-      }
-      throw new Error('ENCRYPTION_KEY must be exactly 32 bytes long');
-    }
-    this.encryptionKey = key;
-  }
-
-  /**
-   * 生成用户特定的加密密钥（基于用户ID）
-   */
-  generateUserKey(userId) {
-    const userKey = crypto.createHash('sha256')
-      .update(this.encryptionKey + userId.toString())
-      .digest('hex')
-      .substring(0, 32);
-    return userKey;
-  }
-
-  /**
-   * 加密数据
-   */
-  encrypt(data, userId) {
-    if (!data) return null;
-    
-    const userKey = this.generateUserKey(userId);
-    const iv = crypto.randomBytes(IV_LENGTH);
-    const cipher = crypto.createCipheriv(ALGORITHM, userKey, iv);
-    
-    let encrypted = cipher.update(data, 'utf8', 'hex');
-    encrypted += cipher.final('hex');
-    
-    const authTag = cipher.getAuthTag();
-    
-    // 返回 IV + AuthTag + EncryptedData
-    return iv.toString('hex') + authTag.toString('hex') + encrypted;
-  }
-
-  /**
-   * 解密数据
-   */
-  decrypt(encryptedData, userId) {
-    if (!encryptedData) return null;
-    
-    try {
-      const userKey = this.generateUserKey(userId);
-      
-      // 提取 IV、AuthTag 和加密数据
-      const iv = Buffer.from(encryptedData.substring(0, IV_LENGTH * 2), 'hex');
-      const authTag = Buffer.from(
-        encryptedData.substring(IV_LENGTH * 2, IV_LENGTH * 2 + AUTH_TAG_LENGTH * 2), 
-        'hex'
-      );
-      const encrypted = encryptedData.substring(IV_LENGTH * 2 + AUTH_TAG_LENGTH * 2);
-      
-      const decipher = crypto.createDecipheriv(ALGORITHM, userKey, iv);
-      decipher.setAuthTag(authTag);
-      
-      let decrypted = decipher.update(encrypted, 'hex', 'utf8');
-      decrypted += decipher.final('utf8');
-      
-      return decrypted;
-    } catch (error) {
-      console.error('Decryption failed:', error);
-      return null;
-    }
-  }
-
-  /**
-   * 加密服务器密码
-   */
-  encryptPassword(password, userId) {
-    return this.encrypt(password, userId);
-  }
-
-  /**
-   * 解密服务器密码
-   */
-  decryptPassword(encryptedPassword, userId) {
-    return this.decrypt(encryptedPassword, userId);
-  }
-
-  /**
-   * 加密私钥
-   */
-  encryptPrivateKey(privateKey, userId) {
-    return this.encrypt(privateKey, userId);
-  }
-
-  /**
-   * 解密私钥
-   */
-  decryptPrivateKey(encryptedPrivateKey, userId) {
-    return this.decrypt(encryptedPrivateKey, userId);
-  }
+// 生成随机盐
+function generateSalt(length = 16) {
+    return crypto.randomBytes(length).toString('hex');
 }
 
-module.exports = new EncryptionService();
+// 使用 AES-256 加密数据
+function encryptData(data, key = LOCAL_STORAGE_KEY) {
+    try {
+        const CryptoJS = require('crypto-js');
+        
+        // 生成随机的 IV
+        const iv = CryptoJS.lib.WordArray.random(16);
+        
+        // 加密数据
+        const encrypted = CryptoJS.AES.encrypt(JSON.stringify(data), key, {
+            iv: iv,
+            mode: CryptoJS.mode.CBC,
+            padding: CryptoJS.pad.Pkcs7
+        });
+        
+        // 返回 IV + 加密数据（base64编码）
+        const ivBase64 = CryptoJS.enc.Base64.stringify(iv);
+        const encryptedBase64 = encrypted.toString();
+        
+        return ivBase64 + ':' + encryptedBase64;
+        
+    } catch (error) {
+        console.error('加密数据失败:', error);
+        throw new Error('数据加密失败');
+    }
+}
+
+// 使用 AES-256 解密数据
+function decryptData(encryptedData, key = LOCAL_STORAGE_KEY) {
+    try {
+        const CryptoJS = require('crypto-js');
+        
+        // 分离 IV 和加密数据
+        const parts = encryptedData.split(':');
+        if (parts.length !== 2) {
+            throw new Error('无效的加密数据格式');
+        }
+        
+        const ivBase64 = parts[0];
+        const encryptedBase64 = parts[1];
+        
+        // 解码 IV
+        const iv = CryptoJS.enc.Base64.parse(ivBase64);
+        
+        // 解密数据
+        const decrypted = CryptoJS.AES.decrypt(encryptedBase64, key, {
+            iv: iv,
+            mode: CryptoJS.mode.CBC,
+            padding: CryptoJS.pad.Pkcs7
+        });
+        
+        const decryptedStr = decrypted.toString(CryptoJS.enc.Utf8);
+        
+        if (!decryptedStr) {
+            throw new Error('解密失败，可能是密钥错误或数据损坏');
+        }
+        
+        return JSON.parse(decryptedStr);
+        
+    } catch (error) {
+        console.error('解密数据失败:', error);
+        throw new Error('数据解密失败: ' + error.message);
+    }
+}
+
+// 哈希密码（用于本地存储的密码保护）
+function hashPassword(password, salt) {
+    const CryptoJS = require('crypto-js');
+    return CryptoJS.PBKDF2(password, salt, {
+        keySize: 256 / 32,
+        iterations: 1000
+    }).toString();
+}
+
+// 验证密码哈希
+function verifyPassword(password, hash, salt) {
+    const newHash = hashPassword(password, salt);
+    return newHash === hash;
+}
+
+module.exports = {
+    generateSalt,
+    encryptData,
+    decryptData,
+    hashPassword,
+    verifyPassword,
+    LOCAL_STORAGE_KEY
+};

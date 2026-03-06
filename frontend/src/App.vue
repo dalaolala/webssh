@@ -5,15 +5,7 @@
 </template>
 
 <script setup>
-import { onMounted } from 'vue'
-import { useAuthStore } from '@/stores/auth'
-
-const authStore = useAuthStore()
-
-onMounted(() => {
-  // 初始化认证状态
-  authStore.initializeAuth()
-})
+// 移除认证相关的初始化逻辑
 </script>
 
 <style>

@@ -2,15 +2,6 @@
   <div class="quick-connect-layout">
     <!-- 固定顶部栏 -->
     <div class="layout-header" :class="{ dark: activeTab && activeTab.type === 'terminal' }">
-      <el-button v-if="!isQuickConnectOnly" @click="$router.push('/dashboard')" size="small" text :style="{ color: activeTab && activeTab.type === 'terminal' ? '#aaa' : '#888' }">
-        <el-icon><ArrowLeft /></el-icon>
-        返回
-      </el-button>
-      <el-button v-else @click="exitQuickConnectOnly" size="small" text :style="{ color: '#f56c6c' }">
-        <el-icon><SwitchButton /></el-icon>
-        退出纯净模式
-      </el-button>
-      <span class="header-divider"></span>
 
       <!-- 动态 Tab 列表 -->
       <div class="tabs-list">
@@ -66,27 +57,11 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { ArrowLeft, Plus, Close, Folder, SwitchButton } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ref, computed } from 'vue'
+import { Plus, Close, Folder } from '@element-plus/icons-vue'
 import QuickConnect from './QuickConnect.vue'
 import QuickConnectTerminal from './QuickConnectTerminal.vue'
 import QuickConnectSftp from './QuickConnectSftp.vue'
-
-const router = useRouter()
-const isQuickConnectOnly = ref(false)
-
-onMounted(() => {
-  isQuickConnectOnly.value = localStorage.getItem('webssh_quick_connect_only') === 'true'
-})
-
-const exitQuickConnectOnly = () => {
-  localStorage.removeItem('webssh_quick_connect_only')
-  isQuickConnectOnly.value = false
-  ElMessage.success('已关闭仅快速连接模式！')
-  router.push('/dashboard')
-}
 
 const generateId = () => 'tab_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)
 

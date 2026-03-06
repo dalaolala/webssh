@@ -1,7 +1,7 @@
 {
-  "name": "webssh-xshell",
+  "name": "webssh-quick-connect",
   "version": "1.0.0",
-  "description": "Web-based Xshell clone with user authentication",
+  "description": "Web-based SSH client with quick connection only",
   "scripts": {
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
     "dev:backend": "cd backend && npm run dev",
@@ -12,5 +12,9 @@
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
+  },
+  "dependencies": {
+    "crypto-js": "^4.2.0",
+    "node-forge": "^1.3.3"
   }
 }

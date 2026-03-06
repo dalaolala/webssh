@@ -5,22 +5,14 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const path = require('path');
 
-// Routes
-const authRoutes = require('./routes/auth');
-const serverRoutes = require('./routes/servers');
-const sftpRoutes = require('./routes/sftp');
-const sftpQuickRoutes = require('./routes/sftp-quick');
-const userRoutes = require('./routes/users');
-const adminRoutes = require('./routes/admin');
-
-// Database
-const db = require('./config/database');
-
 // Socket handlers
 const socketHandler = require('./socket/socketHandler');
 
-// Utilities
-const cryptoUtil = require('./utils/crypto');
+// Crypto utilities
+const { getPublicKey, createCryptoMiddleware } = require('./utils/crypto');
+
+// SFTP routes
+const sftpQuickSimpleRouter = require('./routes/sftp-quick-simple');
 
 // Load environment variables
 dotenv.config();
@@ -39,17 +31,23 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../frontend/dist')));
 
-// API Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/servers', serverRoutes);
-app.use('/api/sftp', sftpRoutes);
-app.use('/api/sftp/quick', sftpQuickRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/admin', adminRoutes);
-
-// Crypto Endpoint
+// 加密API路由
 app.get('/api/crypto/public-key', (req, res) => {
-  res.json({ publicKey: cryptoUtil.getPublicKey() });
+  try {
+    const publicKey = getPublicKey();
+    res.json({ success: true, publicKey });
+  } catch (error) {
+    res.status(500).json({ success: false, message: '获取公钥失败' });
+  }
+});
+
+// SFTP快速连接API路由（无认证版本）
+app.use('/api/sftp/quick', sftpQuickSimpleRouter);
+
+// 快速连接API路由
+app.post('/api/quick-connect', (req, res) => {
+  // 直接返回成功响应，因为认证逻辑已移除
+  res.json({ success: true, message: '快速连接已启用' });
 });
 
 // Socket.io connection handling
@@ -64,18 +62,7 @@ if (process.env.NODE_ENV === 'production') {
   });
 }
 
-// Database connection test
-db.authenticate()
-  .then(() => {
-    console.log('Database connection established successfully.');
-  })
-  .catch(err => {
-    console.error('Unable to connect to the database:', err);
-  });
-
-// Initialize RSA keys
-cryptoUtil.initKeys();
-console.log('RSA Keys initialized for secure payload transmission.');
+console.log('WebSSH快速连接服务器已启动 - 无需数据库连接');
 
 const PORT = process.env.PORT || 3000;
 httpServer.listen(PORT, () => {

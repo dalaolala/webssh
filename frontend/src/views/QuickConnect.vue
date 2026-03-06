@@ -240,13 +240,11 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Connection, Delete, Close, Monitor, Lock, Folder, Upload, Download, Search } from '@element-plus/icons-vue'
 import { useTerminalStore } from '@/stores/terminal'
-import { useAuthStore } from '@/stores/auth'
 import CryptoJS from 'crypto-js'
 
 const HISTORY_KEY = 'webssh_quick_connect_history'
 
 const router = useRouter()
-const authStore = useAuthStore()
 
 const emit = defineEmits(['connect'])
 
@@ -493,29 +491,83 @@ const clearAllHistory = () => {
 // ========== 导入与导出 ==========
 
 const getEncryptionKey = () => {
-  const email = authStore.user?.email || 'default'
-  return `${email}2026webssh`
+  // 优先使用用户自定义密钥
+  const customKey = localStorage.getItem('webssh_export_key')
+  if (customKey) {
+    return customKey
+  }
+  // 如果没有设置自定义密钥，使用默认密钥
+  return 'webssh-quick-connect-2026'
 }
 
-const exportHistory = () => {
+const setCustomKey = (key) => {
+  localStorage.setItem('webssh_export_key', key)
+}
+
+const exportHistory = async () => {
   if (historyList.value.length === 0) {
     ElMessage.warning('没有历史记录可导出')
     return
   }
 
-  const jsonStr = JSON.stringify(historyList.value, null, 2)
-  const key = getEncryptionKey()
-  // 对 JSON 字符串进行 AES 加密
-  const encryptedData = CryptoJS.AES.encrypt(jsonStr, key).toString()
+  // 每次导出都提示输入密钥
+  try {
+    const { value: inputKey, action } = await ElMessageBox.prompt(
+      '请输入导出密钥（建议使用强密码）：\n\n⚠️ 请务必保存好此密钥，后续导入时需要用到！\n如果忘记密钥，将无法解密导出的文件。',
+      '输入导出密钥',
+      {
+        confirmButtonText: '确认并导出',
+        cancelButtonText: '取消导出',
+        inputType: 'password',
+        inputValidator: (value) => {
+          if (!value || value.trim().length < 6) {
+            return '密钥长度至少6位'
+          }
+          return true
+        },
+        inputErrorMessage: '密钥长度至少6位'
+      }
+    )
+    
+    if (action === 'confirm') {
+      const key = inputKey.trim()
+      
+      // 继续导出流程
+      const jsonStr = JSON.stringify(historyList.value, null, 2)
+      // 对 JSON 字符串进行 AES 加密
+      const encryptedData = CryptoJS.AES.encrypt(jsonStr, key).toString()
 
-  const blob = new Blob([encryptedData], { type: 'text/plain' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `webssh_quick_connect_${new Date().toISOString().slice(0, 10)}.enc`
-  a.click()
-  URL.revokeObjectURL(url)
-  ElMessage.success(`已加密导出 ${historyList.value.length} 条连接记录`)
+      const blob = new Blob([encryptedData], { type: 'text/plain' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      
+      // 生成 YYYYMMDD 格式的日期
+      const now = new Date()
+      const year = now.getFullYear()
+      const month = String(now.getMonth() + 1).padStart(2, '0')
+      const day = String(now.getDate()).padStart(2, '0')
+      const dateStr = `${year}${month}${day}`
+      
+      a.download = `webssh_quick_connect_${dateStr}.enc`
+      a.click()
+      URL.revokeObjectURL(url)
+      
+      // 显示密钥提示
+      ElMessage.success({
+        message: `已加密导出 ${historyList.value.length} 条连接记录\n\n🔑 导出密钥：${key}\n⚠️ 请务必保存好此密钥！`,
+        duration: 8000,
+        showClose: true
+      })
+    } else {
+      return // 用户取消导出
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error('导出失败')
+    }
+    return
+  }
 }
 
 const triggerImport = () => {
@@ -530,39 +582,47 @@ const handleImportFile = (event) => {
   reader.onload = async (e) => {
     try {
       const fileContent = e.target.result
-      let key = getEncryptionKey()
       
+      // 导入时弹出对话框提示输入密钥
+      let key = ''
+      try {
+        const { value: inputKey } = await ElMessageBox.prompt(
+          '请输入导出该文件时设置的密钥：', 
+          '需要提供导出密钥以解密', 
+          {
+            confirmButtonText: '确定解密',
+            cancelButtonText: '取消',
+            inputType: 'password',
+            inputPlaceholder: '请输入导出时设置的密钥',
+            inputValidator: (value) => {
+              if (!value || value.trim().length < 6) {
+                return '密钥长度至少6位'
+              }
+              return true
+            },
+            inputErrorMessage: '密钥长度至少6位'
+          }
+        )
+        
+        key = inputKey.trim()
+      } catch (promptErr) {
+        if (promptErr !== 'cancel') {
+          ElMessage.error('请输入有效的密钥')
+        }
+        event.target.value = ''
+        return
+      }
+      
+      // 尝试解密
       let jsonStr = ''
       try {
         const bytes = CryptoJS.AES.decrypt(fileContent, key)
         jsonStr = bytes.toString(CryptoJS.enc.Utf8)
-        if (!jsonStr) throw new Error('Decryption empty')
+        if (!jsonStr) throw new Error('解密失败，密钥可能不正确')
       } catch (err) {
-        // 第一轮使用当前用户邮箱解密失败，弹窗让用户输入导出时的邮箱
-        try {
-          const { value: inputEmail } = await ElMessageBox.prompt(
-            '当前账号解密失败。如果这是其他账号导出的文件，请输入导出该文件时的账号邮箱：', 
-            '需要提供原邮箱以解密', 
-            {
-              confirmButtonText: '确定解密',
-              cancelButtonText: '取消',
-              inputPattern: /[\w!#$%&'*+/=?^_`{|}~-]+(?:\.[\w!#$%&'*+/=?^_`{|}~-]+)*@(?:[\w](?:[\w-]*[\w])?\.)+[\w](?:[\w-]*[\w])?/,
-              inputErrorMessage: '邮箱格式不正确'
-            }
-          )
-          
-          key = `${inputEmail}2026webssh`
-          const newBytes = CryptoJS.AES.decrypt(fileContent, key)
-          jsonStr = newBytes.toString(CryptoJS.enc.Utf8)
-          
-          if (!jsonStr) throw new Error('Decryption empty second try')
-        } catch (promptErr) {
-          if (promptErr !== 'cancel') {
-            ElMessage.error('使用您提供的邮箱解密依然失败，文件可能已损坏或邮箱不正确')
-          }
-          event.target.value = ''
-          return
-        }
+        ElMessage.error('解密失败，请确认密钥是否正确')
+        event.target.value = ''
+        return
       }
 
       const imported = JSON.parse(jsonStr)
@@ -597,7 +657,7 @@ const handleImportFile = (event) => {
       persistHistory()
       ElMessage.success(`成功导入 ${addedCount} 条连接记录`)
     } catch {
-      ElMessage.error('文件解析失败，请确认是有效的 JSON 文件')
+      ElMessage.error('文件解析失败，请确认是有效的加密文件')
     }
   }
   reader.readAsText(file)
@@ -623,10 +683,7 @@ const submitConnection = async (mode) => {
     const valid = await connectForm.value.validate()
     if (!valid) return
     
-    if (!authStore.token) {
-      ElMessage.error('请先登录')
-      return
-    }
+
 
     connecting.value = true
     connectionError.value = ''

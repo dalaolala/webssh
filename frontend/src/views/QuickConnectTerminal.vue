@@ -90,7 +90,6 @@
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ArrowLeft, Connection, Close, Delete, Monitor, Folder, Document, Edit, Select, Tickets } from '@element-plus/icons-vue'
-import { useAuthStore } from '@/stores/auth'
 import { useQuickSftp } from '@/composables/useQuickSftp'
 import { ElMessage } from 'element-plus'
 import QuickSftpFileManager from '@/components/QuickSftpFileManager.vue'
@@ -113,7 +112,6 @@ const props = defineProps({
 
 const emit = defineEmits(['close'])
 const router = useRouter()
-const authStore = useAuthStore()
 const quickSftp = useQuickSftp()
 
 const terminalRef = ref(null)
@@ -212,20 +210,10 @@ const connectToServer = () => {
   isConnecting.value = true
   connectionError.value = null
   
-  socket = io({
-    auth: { token: authStore.token }
-  })
+  socket = io()
   
   socket.on('connect', () => {
-    socket.emit('authenticate', authStore.token)
-  })
-  
-  socket.on('authenticated', (data) => {
-    if (data.success) {
-      socket.emit('quick-connect', props.connectionInfo)
-    } else {
-      handleError('认证失败')
-    }
+    socket.emit('quick-connect', props.connectionInfo)
   })
   
   socket.on('connect_error', (err) => {

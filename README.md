@@ -1,46 +1,18 @@
-# WebSSH - 在线SSH终端工具
+# WebSSH Quick Connect - 快速SSH连接工具
 
-一个基于Web的SSH终端工具，提供完整的Web版SSH客户端体验。
+一个基于Web的SSH终端工具，专注于快速连接功能，无需登录和数据库。
 
 ## ✨ 核心功能
 
-- **用户认证**: 注册、登录、JWT令牌认证
-- **服务器管理**: 服务器增删改查、分组管理
+- **快速连接**: 直接输入SSH连接信息即可连接，无需注册登录
 - **SSH终端**: 基于xterm.js的Web终端，支持密码和私钥认证
-- **数据安全**: AES-256加密存储敏感信息
+- **SFTP文件管理**: 支持文件上传下载和文件管理
+- **本地历史**: 连接历史保存在浏览器本地存储中
+- **无数据库**: 无需数据库配置，开箱即用
 
 ## 🚀 快速部署
 
 ### 📦 Docker 一键部署（推荐）
-
-#### 方式一：使用官方镜像（推荐用于生产环境）
-
-```bash
-docker run -d \
-  --name webssh-app \
-  -p 3000:3000 \
-  -e DB_HOST=your-mysql-host \
-  -e DB_PORT=3306 \
-  -e DB_USER=webssh_user \
-  -e DB_PASSWORD=your-db-password \
-  -e DB_NAME=webssh \
-  -e JWT_SECRET=your-jwt-secret \
-  -e ENCRYPTION_KEY=your-32-byte-encryption-key \
-  dalaolala/webssh:latest
-```
-
-*导入初始化数据请查看 [install.sql](install.sql)*
-
-**最后两个参数相关密钥生成方法：**
-```bash
-# 生成32字节JWT密钥（推荐使用强随机字符串）
-openssl rand -base64 32
-
-# 生成32字节加密密钥（必须正好32个字符）
-openssl rand -hex 16  # 输出32字符的十六进制字符串
-```
-
-#### 方式二：完整部署脚本（包含MySQL）
 
 ```bash
 # 一键部署（包含Docker环境检查、镜像构建、服务启动）
@@ -54,34 +26,25 @@ chmod +x deploy.sh
 
 **部署特点：**
 - 自动构建多阶段Docker镜像
-- 包含MySQL数据库服务，使用 `install.sql` 进行数据库初始化
-- 自动生成安全的加密密钥（JWT_SECRET和ENCRYPTION_KEY）
-- 健康检查和服务监控
+- 无需数据库配置，简化部署流程
 - 生产环境配置
 
 ### 🛠️ 手动部署
 
-**环境要求：** Node.js 16+, MySQL 5.7+
+**环境要求：** Node.js 16+
 
 ```bash
 # 1. 克隆项目
 git clone https://github.com/dalaolala/webssh.git
 cd webssh
 
-# 2. 数据库初始化（使用install.sql脚本）
-mysql -u root -p < install.sql
-
-# 3. 安装依赖
+# 2. 安装依赖
 npm install
 
-# 4. 环境配置
-cp backend/.env.example backend/.env
-# 编辑 backend/.env 文件，配置数据库连接和密钥
-
-# 5. 启动应用
+# 3. 启动应用
 npm run dev
 
-# 6. 前后端分别启动
+# 4. 前后端分别启动
 cd frontend
 npm run dev:frontend
 http://localhost:5173
@@ -91,74 +54,54 @@ npm run dev:backend
 http://localhost:3000
 ```
 
-**重要说明：**
-- 数据库初始化统一使用 `install.sql` 脚本
-- `ENCRYPTION_KEY` 必须是正好32字节的字符串
-- 生产环境请使用强密码生成器创建安全的密钥
-
-生成符合要求的密钥：
-```bash
-# 生成32字节JWT密钥
-openssl rand -base64 32
-
-# 生成32字节加密密钥（必须正好32个字符）
-openssl rand -hex 16
-```
-
 ## 📁 项目结构
 
 ```
 webssh/
-├── backend/          # Node.js后端服务
-├── frontend/         # Vue3前端应用
+├── backend/          # Node.js后端服务（快速连接专用）
+├── frontend/         # Vue3前端应用（快速连接界面）
 ├── deploy.sh         # Docker部署脚本
 ├── docker-compose.yml # 容器编排配置
-├── Dockerfile        # 容器构建配置
-└── install.sql       # 数据库初始化脚本
+└── Dockerfile        # 容器构建配置
 ```
 
 ## 🔧 技术栈
 
 **前端**: Vue 3 + Vite + Element Plus + xterm.js  
-**后端**: Node.js + Express + Socket.IO + MySQL  
+**后端**: Node.js + Express + Socket.IO  
 **部署**: Docker + Docker Compose
 
 ---
 
-*详细文档请查看 [docs/](docs/) 目录*
-*数据库设计请查看 [install.sql](install.sql)*
-
 ## 🔧 使用指南
 
-### 首次使用
-1. 访问 http://localhost:3000 注册账号
-2. 登录后进入仪表板
-3. 添加你的第一个SSH服务器
-4. 点击服务器名称开始连接
+### 快速使用
+1. 访问 http://localhost:3000 直接进入快速连接界面
+2. 输入SSH连接信息（主机、端口、用户名、密码/私钥）
+3. 点击"连接SSH"或"连接SFTP"按钮开始连接
 
-### 服务器配置
-- **名称**: 服务器显示名称
+### 连接配置
 - **主机**: IP地址或域名
 - **端口**: SSH端口（默认22）
 - **用户名**: SSH登录用户名
 - **认证方式**: 密码认证或私钥认证
-- **分组**: 服务器分组（可选）
+- **保存凭据**: 可选择将密码保存在浏览器本地（可选）
 
 ### 终端操作
 - **连接**: 点击"连接"按钮建立SSH会话
-- **命令输入**: 在底部输入框输入命令
+- **命令输入**: 直接在终端中输入命令
 - **快捷键**: 
   - `Ctrl+C`: 中断当前命令
   - `Ctrl+D`: 退出会话
   - `Ctrl+L`: 清屏
-- **断开**: 点击"断开"按钮结束连接
+- **断开**: 关闭标签页或断开连接
 
-### 快速连接
-- **无需提前配置**：直接输入凭据即可发起 SSH / SFTP 连接
-- **独立多标签页架构**：每个终端和独立全屏 SFTP 文件管理器都运行在完全隔离的环境中，互不干扰
-- **智能历史与分组**：连接信息（包括可选保存的密码）与分组展开状态自动安全保存在当前浏览器本地中
-- **支持导入与导出**：一键导出 JSON 格式的快速连接数据，轻松在不同设备间迁移历史
-
+### 快速连接特点
+- **无需注册登录**: 直接使用，无需账号
+- **本地历史**: 连接信息保存在浏览器本地
+- **分组管理**: 自动按分组管理连接历史
+- **导入导出**: 支持连接历史的导入导出
+- **无数据库**: 无需配置数据库，简化部署
 
 ## 🌐 Nginx 反向代理配置
 
@@ -205,10 +148,9 @@ server {
 
 ### 常见问题
 
-- **数据库连接失败**: 检查MySQL服务状态和用户权限
-- **加密密钥错误**: 确保ENCRYPTION_KEY为32字节
 - **端口冲突**: 检查3000和5173端口是否被占用
 - **依赖安装失败**: 清除npm缓存后重新安装
+- **连接失败**: 检查SSH服务器配置和网络连接
 
 **日志查看：**
 ```bash
@@ -240,4 +182,4 @@ cd frontend && npm run dev
 
 ---
 
-**注意**: 本项目仍在开发中，部分功能可能不完善。生产环境使用前请充分测试。
+**注意**: 本项目专注于快速连接功能，移除了用户认证和数据库依赖，适合快速部署和使用。
