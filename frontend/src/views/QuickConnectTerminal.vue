@@ -46,16 +46,10 @@
           />
           
           <!-- 连接提示 -->
-          <div v-if="isConnecting" class="connection-status-overlay">
-            <div class="connecting-card">
-              <div class="spinner-container">
-                <div class="pulse-ring"></div>
-                <el-icon class="is-loading" size="32" color="#409eff"><Loading /></el-icon>
-              </div>
-              <h3 class="connecting-title">正在建立安全连接</h3>
-              <p class="connecting-desc">正在向目标服务器发起 SSH 连接请求...</p>
-            </div>
-          </div>
+          <ConnectingOverlay
+            :visible="isConnecting"
+            :subtitle="connectionDisplay"
+          />
           
           <!-- 连接状态提示 -->
           <div v-if="connectionError" class="connection-error">
@@ -95,7 +89,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ArrowLeft, Connection, Close, Delete, Monitor, Folder, Document, Edit, Select, Tickets, Loading } from '@element-plus/icons-vue'
+import { ArrowLeft, Connection, Close, Delete, Monitor, Folder, Document, Edit, Select, Tickets } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useQuickSftp } from '@/composables/useQuickSftp'
 import { ElMessage } from 'element-plus'
@@ -103,6 +97,7 @@ import QuickSftpFileManager from '@/components/QuickSftpFileManager.vue'
 import CommandLibrary from '@/components/CommandLibrary.vue'
 import TerminalStatusBar from '@/components/TerminalStatusBar.vue'
 import XtermTerminal from '@/components/XtermTerminal.vue'
+import ConnectingOverlay from '@/components/ConnectingOverlay.vue'
 import { io } from 'socket.io-client'
 
 const props = defineProps({
@@ -456,72 +451,7 @@ onUnmounted(() => {
   text-align: center;
 }
 
-/* 现代化连接状态遮罩层 */
-.connection-status-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(30, 30, 30, 0.75);
-  backdrop-filter: blur(8px);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 50;
-  animation: fadeIn 0.3s ease;
-}
-
-.connecting-card {
-  background: linear-gradient(145deg, #2a2a2d, #222225);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 16px;
-  padding: 40px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.4);
-  transform: translateY(-20px);
-}
-
-.spinner-container {
-  position: relative;
-  width: 80px;
-  height: 80px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  margin-bottom: 24px;
-}
-
-.pulse-ring {
-  position: absolute;
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  border: 2px solid #409eff;
-  animation: pulse 1.5s cubic-bezier(0.25, 0.8, 0.25, 1) infinite;
-  opacity: 0;
-}
-
-@keyframes pulse {
-  0% { transform: scale(0.5); opacity: 0.8; }
-  100% { transform: scale(1.5); opacity: 0; }
-}
-
-.connecting-title {
-  color: #ffffff;
-  font-size: 18px;
-  font-weight: 500;
-  margin: 0 0 8px 0;
-  letter-spacing: 0.5px;
-}
-
-.connecting-desc {
-  color: #909399;
-  font-size: 13px;
-  margin: 0;
-}
+/* ConnectingOverlay 已提取为独立组件 ConnectingOverlay.vue */
 
 .prompt-content {
   color: #909399;

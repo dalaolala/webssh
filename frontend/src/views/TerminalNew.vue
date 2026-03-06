@@ -159,21 +159,13 @@
                   </div>
                 </div>
                 
-                <div 
-                  v-else-if="tab.connecting" 
-                  class="connection-status"
-                >
-                  <el-alert 
-                    title="正在连接服务器..." 
-                    type="info" 
-                    show-icon 
-                    :closable="false"
-                    center
-                  />
-                </div>
+                <ConnectingOverlay
+                  :visible="tab.connecting"
+                  :subtitle="tab.server ? `${tab.server.host}:${tab.server.port}` : ''"
+                />
                 
                 <div 
-                  v-else-if="tab.error" 
+                  v-if="tab.error" 
                   class="connection-error"
                 >
                   <el-alert 
@@ -228,6 +220,7 @@ import { useServersStore } from '@/stores/servers'
 import { useAuthStore } from '@/stores/auth'
 import QuickConnect from './QuickConnect.vue'
 import CommandLibrary from '@/components/CommandLibrary.vue'
+import ConnectingOverlay from '@/components/ConnectingOverlay.vue'
 import { io } from 'socket.io-client'
 
 const authStore = useAuthStore()

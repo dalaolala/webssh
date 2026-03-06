@@ -50,15 +50,10 @@
           />
           
           <!-- 连接提示 -->
-          <div v-if="terminalStore.isConnecting" class="connection-status">
-            <el-alert 
-              title="正在连接服务器..." 
-              type="info" 
-              show-icon 
-              :closable="false"
-              center
-            />
-          </div>
+          <ConnectingOverlay
+            :visible="terminalStore.isConnecting"
+            :subtitle="currentServer ? `${currentServer.host}:${currentServer.port}` : ''"
+          />
           
           <!-- 连接状态提示 -->
           <div v-if="terminalStore.connectionError" class="connection-error">
@@ -107,6 +102,7 @@ import SftpFileManager from '@/components/SftpFileManager.vue'
 import TerminalStatusBar from '@/components/TerminalStatusBar.vue'
 import CommandLibrary from '@/components/CommandLibrary.vue'
 import XtermTerminal from '@/components/XtermTerminal.vue'
+import ConnectingOverlay from '@/components/ConnectingOverlay.vue'
 import { ElMessage } from 'element-plus'
 
 const route = useRoute()
