@@ -329,7 +329,7 @@ const treeData = computed(() => {
   const groups = {}
   
   historyList.value.forEach((item, index) => {
-    const groupKey = item.group || '未分组'
+    const groupKey = item.group || 'Default'
     if (!groups[groupKey]) {
       groups[groupKey] = {
         id: `group-${groupKey}`,
