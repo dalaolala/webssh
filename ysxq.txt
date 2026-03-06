@@ -149,4 +149,6 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 
 使用任何32个字符的组合，例如：
 k3yF0rW3bSSH2024Pr0j3ctS3cur1ty!
-MyS3cur3K3yF0rW3bSSHPr0j3ct2024
+MyS3cur3K3yF0rW3bSSHPr0j3ct2024  
+
+88888
