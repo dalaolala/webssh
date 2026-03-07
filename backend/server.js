@@ -29,7 +29,18 @@ const io = new Server(httpServer, {
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '../frontend/dist')));
+
+// 根据运行环境确定前端静态文件路径
+let frontendDistPath;
+if (process.versions.hasOwnProperty('electron')) {
+  // Electron 环境
+  frontendDistPath = path.join(__dirname, '../../frontend/dist');
+} else {
+  // 普通 Node.js 环境
+  frontendDistPath = path.join(__dirname, '../frontend/dist');
+}
+
+app.use(express.static(frontendDistPath));
 
 // 加密API路由
 app.get('/api/crypto/public-key', (req, res) => {
@@ -54,11 +65,11 @@ app.post('/api/quick-connect', (req, res) => {
 socketHandler(io);
 
 // Serve frontend for production
-if (process.env.NODE_ENV === 'production') {
-  app.use(express.static(path.join(__dirname, '../frontend/dist')));
+if (process.env.NODE_ENV === 'production' || process.versions.hasOwnProperty('electron')) {
+  app.use(express.static(frontendDistPath));
 
   app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
+    res.sendFile(path.join(frontendDistPath, 'index.html'));
   });
 }
 

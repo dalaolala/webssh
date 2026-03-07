@@ -1,20 +1,74 @@
 {
-  "name": "webssh-quick-connect",
+  "main": "electron/main.js",
+  "name": "webssh-desktop",
   "version": "1.0.0",
-  "description": "Web-based SSH client with quick connection only",
+  "description": "WebSSH 桌面应用",
   "scripts": {
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
     "dev:backend": "cd backend && npm run dev",
     "dev:frontend": "cd frontend && npm run dev",
     "build": "npm run build:frontend",
     "build:frontend": "cd frontend && npm run build",
-    "start": "cd backend && npm start"
+    "start": "cd backend && npm start",
+    "electron:dev": "cross-env NODE_ENV=development electron .",
+    "dist": "npm run build && electron-builder --win --dir",
+    "dist:dir": "npm run build && electron-builder --dir --win"
+  },
+  "build": {
+    "appId": "com.webssh.desktop",
+    "productName": "WebSSH",
+    "copyright": "Copyright © 2026",
+    "directories": {
+      "output": "dist-electron",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**/*",
+      "backend/**/*",
+      "frontend/dist/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "extraMetadata": {
+      "main": "electron/main.js"
+    },
+    "asar": false,
+    "asarUnpack": [
+      "frontend/dist/**/*",
+      "backend/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "WebSSH"
+    }
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
   },
   "dependencies": {
     "crypto-js": "^4.2.0",
-    "node-forge": "^1.3.3"
+    "node-forge": "^1.3.3",
+    "express": "^4.18.2",
+    "socket.io": "^4.7.5",
+    "ssh2": "^1.15.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "multer": "^1.4.5-lts.1"
   }
 }
