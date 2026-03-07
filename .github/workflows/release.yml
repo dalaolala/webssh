@@ -38,9 +38,11 @@ jobs:
           if exist dist-electron\WebSSH_Installer rmdir /s /q dist-electron\WebSSH_Installer
           mkdir dist-electron\WebSSH_Installer
           xcopy dist-electron\win-unpacked\* dist-electron\WebSSH_Installer\ /E /I /Y /H /R /Q
+        shell: cmd
 
       - name: 复制安装脚本
         run: copy scripts\install.bat dist-electron\WebSSH_Installer\setup.bat /Y
+        shell: cmd
 
       - name: 创建说明文档
         run: |
@@ -57,6 +59,7 @@ jobs:
             echo 版本: 1.0.0
             echo 日期: %date%
           ) > dist-electron\WebSSH_Installer\安装说明.txt
+        shell: cmd
 
       - name: 创建 zip 压缩包
         run: powershell -Command "Compress-Archive -Path 'dist-electron\WebSSH_Installer\*' -DestinationPath 'dist-electron\WebSSH_Portable_v1.0.0.zip' -Force"
