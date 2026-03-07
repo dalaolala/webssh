@@ -11,8 +11,9 @@
     "build:frontend": "cd frontend && npm run build",
     "start": "cd backend && npm start",
     "electron:dev": "cross-env NODE_ENV=development electron .",
-    "dist": "npm run build && electron-builder --win --dir",
-    "dist:dir": "npm run build && electron-builder --dir --win"
+    "dist": "npm run build && electron-builder --win",
+    "dist:dir": "npm run build && electron-builder --dir --win",
+    "dist:installer": "npm run build && electron-builder --win nsis"
   },
   "build": {
     "appId": "com.webssh.desktop",
@@ -40,7 +41,7 @@
     "win": {
       "target": [
         {
-          "target": "dir",
+          "target": "nsis",
           "arch": [
             "x64"
           ]
@@ -52,7 +53,9 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "WebSSH"
+      "shortcutName": "WebSSH",
+      "perMachine": false,
+      "runAfterFinish": true
     }
   },
   "devDependencies": {

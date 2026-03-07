@@ -3,6 +3,46 @@
 ## 文件位置
 打包后的应用程序位于: `dist-electron/win-unpacked/WebSSH.exe`
 
+## 打包方式
+
+### 方式一: 单文件模式(默认)
+生成单文件可执行程序,用户可以直接运行:
+```bash
+npm run dist
+# 或
+rebuild.bat
+```
+- **输出**: `dist-electron/win-unpacked/WebSSH.exe`
+- **优点**: 单文件,无依赖,直接运行
+- **缺点**: 文件较大(~177MB)
+
+### 方式二: 便携安装包(可选)
+将应用目录压缩成 zip 包,方便分发:
+```bash
+# 1. 先生成应用目录
+npm run dist:dir
+
+# 2. 然后创建压缩包(需要手动执行)
+cd dist-electron
+# 使用 WinRAR/7-Zip 等工具压缩 win-unpacked 目录
+# 或使用 PowerShell:
+powershell -Command "Compress-Archive -Path 'win-unpacked\*' -DestinationPath 'WebSSH_Portable_v1.0.0.zip'"
+```
+- **输出**: `dist-electron/WebSSH_Portable_v1.0.0.zip`
+- **优点**: 压缩后文件更小(~80-100MB),方便分发
+- **缺点**: 用户需要解压后运行
+
+### 方式三: NSIS 安装程序(需要额外配置)
+生成 Windows 安装程序(.exe),提供安装向导:
+```bash
+# 需要先安装 NSIS 工具
+# 然后修改 package.json 中的 win.target 为 "nsis"
+npm run dist:installer
+```
+- **输出**: `dist-electron/WebSSH Setup 1.0.0.exe`
+- **优点**: 专业的安装体验,支持快捷方式、卸载等
+- **缺点**: 需要额外配置和工具
+
 ## 重新打包步骤
 
 ### 方法一: 完整重新打包(推荐)
