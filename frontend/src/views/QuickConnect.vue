@@ -110,7 +110,7 @@
               </template>
 
               <el-alert
-                title="快速连接数据保存在本地浏览器中，更换设备或清除浏览器数据后将会丢失。"
+                title="更换设备会导致数据丢失，请及时通过导出功能备份数据！"
                 type="warning"
                 show-icon
                 :closable="false"
