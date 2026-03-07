@@ -1,0 +1,69 @@
+name: Release WebSSH Portable
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: 安装依赖
+        run: npm install
+
+      - name: 构建前端
+        run: npm run build
+
+      - name: 打包应用 (Electron Builder)
+        run: npx electron-builder --win --dir
+
+      - name: 准备安装包目录
+        run: |
+          if exist dist-electron\WebSSH_Installer rmdir /s /q dist-electron\WebSSH_Installer
+          mkdir dist-electron\WebSSH_Installer
+          xcopy dist-electron\win-unpacked\* dist-electron\WebSSH_Installer\ /E /I /Y /H /R /Q
+
+      - name: 复制安装脚本
+        run: copy scripts\install.bat dist-electron\WebSSH_Installer\setup.bat /Y
+
+      - name: 创建说明文档
+        run: |
+          (
+            echo WebSSH 桌面应用安装包
+            echo ====================
+            echo.
+            echo 安装方法:
+            echo 1. 双击运行 setup.bat 安装程序
+            echo 2. 或直接运行 WebSSH.exe 使用
+            echo.
+            echo 安装后将创建桌面快捷方式
+            echo.
+            echo 版本: 1.0.0
+            echo 日期: %date%
+          ) > dist-electron\WebSSH_Installer\安装说明.txt
+
+      - name: 创建 zip 压缩包
+        run: powershell -Command "Compress-Archive -Path 'dist-electron\WebSSH_Installer\*' -DestinationPath 'dist-electron\WebSSH_Portable_v1.0.0.zip' -Force"
+
+      - name: 获取版本号
+        id: get_version
+        run: echo "version=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: 创建 GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist-electron/WebSSH_Portable_v1.0.0.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

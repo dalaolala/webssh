@@ -3,6 +3,46 @@
 ## 文件位置
 打包后的应用程序位于: `dist-electron/win-unpacked/WebSSH.exe`
 
+## GitHub Actions 自动发布 ⭐ 推荐用于公开发布
+
+项目已配置 GitHub Actions 自动发布,可以通过推送 tag 自动生成便携版并发布到 GitHub Release。
+
+### 快速发布命令
+
+```bash
+# 使用发布脚本(最简单)
+release.bat
+
+# 或手动推送 tag
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+### 发布流程
+
+1. **本地测试**: 运行 `release.bat`,输入版本号
+2. **自动构建**: 脚本会自动构建前端和打包应用
+3. **提交代码**: 自动提交并推送到 feature-local 分支
+4. **推送 tag**: 自动创建并推送 tag 到 GitHub
+5. **自动发布**: GitHub Actions 自动构建并创建 Release
+6. **下载文件**: 用户从 Release 页面下载 zip 文件
+
+### 详细说明
+
+详见: `docs/GitHub Actions自动发布说明.md`
+
+### 仓库信息
+
+- 仓库: https://github.com/dalaolala/webssh
+- 分支: feature-local
+- 工作流: `.github/workflows/release.yml`
+
+### 输出
+
+```
+https://github.com/dalaolala/webssh/releases/download/v1.0.0/WebSSH_Portable_v1.0.0.zip
+```
+
 ## 打包方式
 
 ### 方式一: 单文件模式(默认)
