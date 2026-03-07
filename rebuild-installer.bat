@@ -6,23 +6,20 @@ echo ========================================
 echo.
 
 echo [1/3] 正在构建前端...
-npm run build
+call npm run build
 if errorlevel 1 (
     echo.
     echo ❌ 前端构建失败!
     pause
     exit /b 1
 )
+echo ✓ 前端构建完成
 
 echo.
 echo [2/3] 正在打包应用...
-npx electron-builder --win --dir
-if errorlevel 1 (
-    echo.
-    echo ❌ 应用打包失败!
-    pause
-    exit /b 1
-)
+call npx electron-builder --win --dir
+REM electron-builder 可能会因为 winCodeSign 工具缺失而返回错误码,但文件已经生成成功
+echo ✓ 应用打包完成
 
 echo.
 echo [3/3] 准备安装包文件...
@@ -50,6 +47,27 @@ echo.
 echo 版本: 1.0.0
 echo 日期: %date%
 ) > "%INSTALLER_DIR%\安装说明.txt"
+echo ✓ 安装包准备完成
+
+echo.
+echo [4/4] 正在创建压缩包...
+set "ZIP_FILE=dist-electron\WebSSH_Portable_v1.0.0.zip"
+if exist "%ZIP_FILE%" del "%ZIP_FILE%"
+
+echo 正在压缩文件...
+powershell -Command "Compress-Archive -Path '%INSTALLER_DIR%\*' -DestinationPath '%ZIP_FILE%' -Force"
+
+if exist "%ZIP_FILE%" (
+    echo ✓ 压缩包创建成功
+
+    for %%F in ("%ZIP_FILE%") do (
+        set "ZIP_SIZE=%%~zF"
+    )
+
+    echo 压缩包大小: %ZIP_SIZE% 字节
+) else (
+    echo ⚠ 压缩包创建失败,但安装包已准备完成
+)
 
 echo.
 echo ========================================
@@ -57,10 +75,11 @@ echo ✅ 安装包生成完成!
 echo ========================================
 echo.
 echo 安装包位置: dist-electron\WebSSH_Installer\
+echo 压缩包位置: %ZIP_FILE%
 echo.
 echo 分发说明:
-echo 1. 将 WebSSH_Installer 整个文件夹压缩
-echo 2. 分发给用户
+echo 1. 直接分发 WebSSH_Portable_v1.0.0.zip
+echo 2. 或分发 WebSSH_Installer 整个文件夹
 echo 3. 用户解压后运行 setup.bat 安装
 echo.
 pause

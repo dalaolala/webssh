@@ -6,23 +6,25 @@ echo ========================================
 echo.
 
 echo [1/2] 正在构建前端...
-npm run build
+call npm run build
 if errorlevel 1 (
     echo.
     echo ❌ 前端构建失败!
     pause
     exit /b 1
 )
+echo ✓ 前端构建完成
 
 echo.
 echo [2/2] 正在打包应用(生成安装程序)...
-npx electron-builder --win
+call npx electron-builder --win
 if errorlevel 1 (
     echo.
     echo ❌ 应用打包失败!
     pause
     exit /b 1
 )
+echo ✓ 应用打包完成
 
 echo.
 echo ========================================

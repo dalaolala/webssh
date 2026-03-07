@@ -16,32 +16,48 @@ rebuild.bat
 - **优点**: 单文件,无依赖,直接运行
 - **缺点**: 文件较大(~177MB)
 
-### 方式二: 便携安装包(可选)
-将应用目录压缩成 zip 包,方便分发:
+### 方式二: 便携安装包(推荐) ⭐
+自动生成带安装脚本的 zip 压缩包:
+```bash
+rebuild-installer.bat
+```
+- **输出**: `dist-electron/WebSSH_Portable_v1.0.0.zip` (~12.7MB)
+- **包含**: WebSSH.exe + setup.bat 安装脚本 + 说明文档
+- **优点**: 压缩后文件小(~13MB),方便分发,一键安装
+- **缺点**: 用户需要解压后运行
+
+### 方式三: 便携安装包(手动)
+将应用目录手动压缩成 zip 包:
 ```bash
 # 1. 先生成应用目录
 npm run dist:dir
 
-# 2. 然后创建压缩包(需要手动执行)
+# 2. 然后手动压缩
 cd dist-electron
-# 使用 WinRAR/7-Zip 等工具压缩 win-unpacked 目录
-# 或使用 PowerShell:
-powershell -Command "Compress-Archive -Path 'win-unpacked\*' -DestinationPath 'WebSSH_Portable_v1.0.0.zip'"
+# 使用 WinRAR/7-Zip 等工具压缩 WebSSH_Installer 目录
 ```
-- **输出**: `dist-electron/WebSSH_Portable_v1.0.0.zip`
-- **优点**: 压缩后文件更小(~80-100MB),方便分发
-- **缺点**: 用户需要解压后运行
+- **输出**: 手动创建的 zip 文件
+- **优点**: 完全控制压缩方式和文件内容
+- **缺点**: 需要手动操作
 
-### 方式三: NSIS 安装程序(需要额外配置)
-生成 Windows 安装程序(.exe),提供安装向导:
+### 方式四: NSIS 安装程序(专业) ⭐⭐⭐
+生成专业的 Windows 安装程序(.exe),提供完整安装向导:
 ```bash
 # 需要先安装 NSIS 工具
-# 然后修改 package.json 中的 win.target 为 "nsis"
+# 下载地址: https://nsis.sourceforge.io/Download
+
+# 然后运行
+rebuild-nsis.bat
+
+# 或使用 npm 命令
 npm run dist:installer
 ```
-- **输出**: `dist-electron/WebSSH Setup 1.0.0.exe`
-- **优点**: 专业的安装体验,支持快捷方式、卸载等
-- **缺点**: 需要额外配置和工具
+- **输出**: `dist-electron/WebSSH Setup 1.0.0.exe` (~50-60MB)
+- **优点**: 专业的安装体验,支持自定义安装路径、快捷方式、卸载等
+- **缺点**: 需要额外安装 NSIS 工具
+- **适用场景**: 公开发布、企业部署
+
+详细说明请参考: `docs/NSIS安装说明.md`
 
 ## 重新打包步骤
 
