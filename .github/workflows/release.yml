@@ -18,8 +18,14 @@ jobs:
         with:
           node-version: '18'
 
-      - name: 安装依赖
+      - name: 安装根目录依赖
         run: npm install
+
+      - name: 安装前端依赖
+        run: cd frontend && npm install
+
+      - name: 安装后端依赖
+        run: cd backend && npm install
 
       - name: 构建前端
         run: npm run build
