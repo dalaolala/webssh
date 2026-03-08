@@ -1,7 +1,7 @@
 <template>
   <div class="quick-connect-layout">
     <!-- 固定顶部栏 -->
-    <div class="layout-header" :class="{ dark: activeTab && activeTab.type === 'terminal' }">
+    <div class="layout-header" :class="{ dark: (activeTab && activeTab.type === 'terminal') || isDark }">
 
       <!-- 动态 Tab 列表 -->
       <div class="tabs-list">
@@ -30,10 +30,15 @@
           </el-button>
         </el-tooltip>
       </div>
+
+      <!-- 主题切换按钮 -->
+      <div class="header-actions">
+        <ThemeToggle />
+      </div>
     </div>
 
     <!-- 子页面内容 -->
-    <div class="layout-content">
+    <div class="layout-content" :class="{ 'dark-theme': isDark }">
       <div v-for="tab in tabs" :key="tab.id" v-show="activeTabId === tab.id" class="tab-content-wrapper">
         <QuickConnect 
           v-if="tab.type === 'form'" 
@@ -58,10 +63,16 @@
 
 <script setup>
 import { ref, computed } from 'vue'
+import { storeToRefs } from 'pinia'
 import { Plus, Close, Folder } from '@element-plus/icons-vue'
+import { useThemeStore } from '@/stores/theme'
 import QuickConnect from './QuickConnect.vue'
 import QuickConnectTerminal from './QuickConnectTerminal.vue'
 import QuickConnectSftp from './QuickConnectSftp.vue'
+import ThemeToggle from '@/components/ThemeToggle.vue'
+
+const themeStore = useThemeStore()
+const { isDark } = storeToRefs(themeStore)
 
 const generateId = () => 'tab_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)
 
@@ -115,8 +126,10 @@ const handleConnect = (tabId, connectionInfo) => {
 }
 
 .layout-header {
-  background: #fafafa;
-  border-bottom: 1px solid #e8e8e8;
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
   display: flex;
   align-items: center;
   padding: 0 14px;
@@ -124,12 +137,14 @@ const handleConnect = (tabId, connectionInfo) => {
   flex-shrink: 0;
   z-index: 100;
   gap: 8px;
-  transition: background-color 0.2s, border-color 0.2s;
+  transition: background-color 0.3s ease, border-color 0.3s ease;
 }
 
 .layout-header.dark {
-  background: #252526;
-  border-bottom: 1px solid #3e3e42;
+  background: rgba(30, 30, 30, 0.95);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .header-divider {
@@ -227,22 +242,40 @@ const handleConnect = (tabId, connectionInfo) => {
 }
 
 .new-tab-btn {
-  color: #aaa;
-  transition: all 0.2s;
+  color: #86868b;
+  transition: all 0.2s ease;
   flex-shrink: 0;
 }
 
 .new-tab-btn:hover {
-  color: #fff;
-  background-color: rgba(255, 255, 255, 0.1);
+  color: #007AFF;
+  background-color: rgba(0, 122, 255, 0.08);
 }
 
 .layout-header:not(.dark) .new-tab-btn {
-  color: #888;
+  color: #86868b;
 }
+
 .layout-header:not(.dark) .new-tab-btn:hover {
-  color: #333;
-  background-color: rgba(0, 0, 0, 0.05);
+  color: #007AFF;
+  background-color: rgba(0, 122, 255, 0.08);
+}
+
+.layout-header.dark .new-tab-btn {
+  color: #86868b;
+}
+
+.layout-header.dark .new-tab-btn:hover {
+  color: #007AFF;
+  background-color: rgba(0, 122, 255, 0.15);
+}
+
+/* Header Actions */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
 .layout-content {
@@ -250,6 +283,12 @@ const handleConnect = (tabId, connectionInfo) => {
   min-height: 0;
   overflow: hidden;
   position: relative;
+  background-color: #f5f5f7;
+  transition: background-color 0.3s ease;
+}
+
+.layout-content.dark-theme {
+  background-color: #000000;
 }
 
 .tab-content-wrapper {

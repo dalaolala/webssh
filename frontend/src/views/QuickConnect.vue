@@ -1,5 +1,5 @@
 <template>
-  <div class="quick-connect-page">
+  <div class="quick-connect-page" :class="{ 'dark-theme': isDark }">
     <el-container class="quick-connect-container">
       <!-- 主内容区域：左侧历史树 + 右侧表单 -->
       <el-container class="main-body">
@@ -149,7 +149,7 @@
                 </el-form-item>
                 
                 <el-form-item label="用户名" prop="username">
-                  <el-input v-model="form.username" placeholder="请输入SSH用户名" />
+                  <el-input v-model="form.username" placeholder="请输入SSH用户名" autocomplete="off" />
                 </el-form-item>
                 
                 <el-form-item label="认证方式" prop="authType">
@@ -164,7 +164,8 @@
                     v-model="form.password" 
                     type="password" 
                     placeholder="请输入SSH密码" 
-                    show-password 
+                    show-password
+                    autocomplete="new-password" 
                   />
                 </el-form-item>
                 
@@ -236,15 +237,19 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Connection, Delete, Close, Monitor, Lock, Folder, Upload, Download, Search } from '@element-plus/icons-vue'
 import { useTerminalStore } from '@/stores/terminal'
+import { useThemeStore } from '@/stores/theme'
 import CryptoJS from 'crypto-js'
 
 const HISTORY_KEY = 'webssh_quick_connect_history'
 
 const router = useRouter()
+const themeStore = useThemeStore()
+const { isDark } = storeToRefs(themeStore)
 
 const emit = defineEmits(['connect'])
 
@@ -721,7 +726,12 @@ onMounted(() => {
 <style scoped>
 .quick-connect-page {
   height: 100%;
-  background-color: #f0f2f5;
+  background-color: #f5f5f7;
+  transition: background-color 0.3s ease;
+}
+
+.quick-connect-page.dark-theme {
+  background-color: #000000;
 }
 
 .quick-connect-container {
@@ -740,14 +750,22 @@ onMounted(() => {
 
 /* 左侧历史树 */
 .history-aside {
-  background: rgba(255, 255, 255, 0.65);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border-right: 1px solid rgba(0, 0, 0, 0.1);
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-right: 1px solid rgba(0, 0, 0, 0.08);
   display: flex;
   flex-direction: column;
   overflow: hidden;
   padding: 8px 12px;
+  transition: all 0.3s ease;
+}
+
+.dark-theme .history-aside {
+  background: rgba(28, 28, 30, 0.8);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .aside-header {
@@ -759,22 +777,26 @@ onMounted(() => {
   flex-shrink: 0;
 }
 
+.dark-theme .aside-header {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
 .history-search {
   padding: 12px 4px 8px;
 }
 
 .history-search :deep(.el-input__wrapper) {
-  background-color: rgba(0, 0, 0, 0.05);
-  border-radius: 8px;
+  background-color: rgba(0, 0, 0, 0.04);
+  border-radius: 10px;
   box-shadow: none !important;
   border: 1px solid rgba(0, 0, 0, 0.08);
-  transition: all 0.2s;
+  transition: all 0.2s ease;
 }
 
 .history-search :deep(.el-input__wrapper.is-focus) {
-  background-color: rgba(255, 255, 255, 1);
+  background-color: #ffffff;
   border-color: #007AFF;
-  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.2) !important;
+  box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.1) !important;
 }
 
 .history-search :deep(.el-input__inner) {
@@ -785,7 +807,7 @@ onMounted(() => {
 .aside-title {
   font-size: 16px;
   font-weight: 600;
-  color: #1c1c1e;
+  color: #1d1d1f;
   letter-spacing: -0.5px;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
@@ -827,7 +849,7 @@ onMounted(() => {
 }
 
 .tree-folder-icon {
-  color: #1c1c1e;
+  color: #86868b;
   font-size: 16px;
   flex-shrink: 0;
 }
@@ -843,13 +865,13 @@ onMounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #1c1c1e;
+  color: #1d1d1f;
   font-weight: 500;
 }
 
 .tree-node.is-leaf .tree-node-label {
-  color: #1c1c1e;
-  font-weight: normal;
+  color: #424245;
+  font-weight: 400;
 }
 
 .tree-node-actions {
@@ -925,22 +947,210 @@ onMounted(() => {
 
 .connect-card {
   margin-bottom: 20px;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
 .card-header h3 {
   margin: 0 0 4px 0;
-  color: #333;
+  color: #1d1d1f;
+  font-weight: 600;
 }
 
 .card-header p {
   margin: 0;
-  color: #999;
+  color: #86868b;
   font-size: 13px;
 }
 
 .connection-error,
 .connecting-status {
   margin-top: 20px;
+}
+
+/* 暗黑主题样式 - 苹果风格 */
+.dark-theme .history-search :deep(.el-input__wrapper) {
+  background-color: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+}
+
+.dark-theme .history-search :deep(.el-input__wrapper.is-focus) {
+  background-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.15) !important;
+}
+
+.dark-theme .history-search :deep(.el-input__inner) {
+  color: #ffffff;
+}
+
+.dark-theme .aside-title {
+  color: #ffffff;
+}
+
+.dark-theme .tree-folder-icon {
+  color: #e5e5e5;
+}
+
+.dark-theme .tree-node-label {
+  color: #e5e5e5;
+}
+
+.dark-theme .tree-node.is-leaf .tree-node-label {
+  color: #d1d1d1;
+}
+
+.dark-theme ::deep(.el-tree-node__content:hover) {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+.dark-theme .connect-card {
+  background-color: rgba(30, 30, 30, 0.8);
+  border-color: rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+}
+
+.dark-theme :deep(.el-card__header) {
+  border-bottom-color: rgba(255, 255, 255, 0.1);
+}
+
+.dark-theme .card-header h3 {
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.dark-theme .card-header p {
+  color: #98989d;
+}
+
+.dark-theme :deep(.el-form-item__label) {
+  color: #d1d1d1;
+  font-weight: 500;
+}
+
+.dark-theme :deep(.el-input__wrapper) {
+  background-color: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+}
+
+.dark-theme :deep(.el-input__wrapper.is-focus),
+.dark-theme :deep(.el-input__wrapper.is-filled) {
+  background-color: rgba(255, 255, 255, 0.12);
+  border-color: #007AFF;
+  box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.15) !important;
+}
+
+.dark-theme :deep(.el-input__inner) {
+  background-color: transparent !important;
+  color: #ffffff;
+}
+
+.dark-theme :deep(.el-textarea__inner) {
+  background-color: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  border-radius: 8px;
+}
+
+.dark-theme :deep(.el-textarea__inner:focus) {
+  background-color: rgba(255, 255, 255, 0.12);
+  border-color: #007AFF;
+  box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.15) !important;
+}
+
+.dark-theme :deep(.el-radio__label) {
+  color: #d1d1d1;
+}
+
+.dark-theme :deep(.el-checkbox__label) {
+  color: #d1d1d1;
+}
+
+/* Select 下拉框优化 - 统一背景色 */
+.dark-theme :deep(.el-select__wrapper) {
+  background-color: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  box-shadow: none !important;
+}
+
+.dark-theme :deep(.el-select__wrapper.is-focused) {
+  background-color: rgba(255, 255, 255, 0.12);
+  border-color: #007AFF;
+  box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.15) !important;
+}
+
+.dark-theme :deep(.el-select__selected-item) {
+  color: #ffffff;
+}
+
+.dark-theme :deep(.el-select__placeholder) {
+  color: #98989d;
+}
+
+.dark-theme :deep(.el-select__popper) {
+  background-color: rgba(30, 30, 30, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.dark-theme :deep(.el-select-dropdown__item) {
+  color: #ffffff;
+}
+
+.dark-theme :deep(.el-select-dropdown__item:hover) {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.dark-theme :deep(.el-select-dropdown__item.is-selected) {
+  background-color: rgba(0, 122, 255, 0.15);
+  color: #007AFF;
+  font-weight: 500;
+}
+
+.dark-theme :deep(.el-button) {
+  border-radius: 8px;
+}
+
+.dark-theme :deep(.el-input-number) {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.dark-theme :deep(.el-input-number .el-input__inner) {
+  background-color: transparent;
+  color: #ffffff;
+}
+
+/* Input Number 加减按钮样式 */
+.dark-theme :deep(.el-input-number__decrease),
+.dark-theme :deep(.el-input-number__increase) {
+  background-color: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+}
+
+.dark-theme :deep(.el-input-number__decrease:hover),
+.dark-theme :deep(.el-input-number__increase:hover) {
+  background-color: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+/* Input 图标 - 统一颜色 */
+.dark-theme :deep(.el-input__prefix),
+.dark-theme :deep(.el-input__suffix) {
+  color: #98989d;
+}
+
+.dark-theme :deep(.el-input__prefix-inner > .el-icon),
+.dark-theme :deep(.el-input__suffix-inner > .el-icon) {
+  color: #98989d;
+}
+
+.dark-theme :deep(.el-input__wrapper:hover .el-input__prefix),
+.dark-theme :deep(.el-input__wrapper:hover .el-input__suffix) {
+  color: #d1d1d1;
 }
 
 /* 响应式设计 */

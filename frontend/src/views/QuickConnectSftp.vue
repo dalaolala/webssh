@@ -1,5 +1,5 @@
 <template>
-  <div class="sftp-page">
+  <div class="sftp-page" :class="{ 'dark-theme': isDark }">
     <el-container class="sftp-container" v-loading="quickSftp.loading.value" element-loading-text="正在连接 SFTP...">
       <!-- 顶部连接状态和操作栏 -->
       <el-header height="48px" class="sftp-header">
@@ -79,10 +79,15 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { storeToRefs } from 'pinia'
 import { Folder, Connection, Close } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useQuickSftp } from '@/composables/useQuickSftp'
 import QuickSftpFileManager from '@/components/QuickSftpFileManager.vue'
+import { useThemeStore } from '@/stores/theme'
+
+const themeStore = useThemeStore()
+const { isDark } = storeToRefs(themeStore)
 
 const props = defineProps({
   tabId: {
@@ -169,6 +174,11 @@ onUnmounted(() => {
   background-color: #f5f7fa;
   display: flex;
   flex-direction: column;
+  transition: background-color 0.3s ease;
+}
+
+.sftp-page.dark-theme {
+  background-color: #000000;
 }
 
 .sftp-container {
@@ -185,6 +195,14 @@ onUnmounted(() => {
   align-items: center;
   padding: 0 16px;
   box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  transition: all 0.3s ease;
+}
+
+.dark-theme .sftp-header {
+  background-color: rgba(30, 30, 30, 0.95);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .header-left {
@@ -204,10 +222,18 @@ onUnmounted(() => {
   color: #303133;
 }
 
+.dark-theme .header-title {
+  color: #ffffff;
+}
+
 .server-info {
   font-weight: normal;
   color: #606266;
   margin-left: 4px;
+}
+
+.dark-theme .server-info {
+  color: #98989d;
 }
 
 .status-tag {
@@ -253,6 +279,10 @@ onUnmounted(() => {
   margin-top: -10px;
 }
 
+.dark-theme .empty-tip {
+  color: #98989d;
+}
+
 .file-manager-wrapper {
   flex: 1;
   background-color: #ffffff;
@@ -262,6 +292,13 @@ onUnmounted(() => {
   box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.05);
   display: flex;
   flex-direction: column;
+  transition: all 0.3s ease;
+}
+
+.dark-theme .file-manager-wrapper {
+  background-color: rgba(30, 30, 30, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.4);
 }
 
 /* 确保内部 FileManager 组件能够充满容器 */

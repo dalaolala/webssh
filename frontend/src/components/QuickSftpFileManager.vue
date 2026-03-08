@@ -1,5 +1,5 @@
 <template>
-  <div class="sftp-file-manager">
+  <div class="sftp-file-manager" :class="{ 'dark-theme': isDark }">
     <!-- 顶部工具栏 -->
     <div class="toolbar">
       <div class="toolbar-buttons">
@@ -176,12 +176,17 @@
 
 <script setup>
 import { ref, onMounted, computed, watch } from 'vue';
+import { storeToRefs } from 'pinia';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { VueMonacoEditor } from '@guolao/vue-monaco-editor';
 import { 
   ArrowUp, Refresh, FolderAdd, Upload, Delete, Loading, 
   Folder, Document, Right
 } from '@element-plus/icons-vue'
+import { useThemeStore } from '@/stores/theme'
+
+const themeStore = useThemeStore()
+const { isDark } = storeToRefs(themeStore)
 
 const props = defineProps({
   sftp: {
@@ -445,6 +450,11 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   color: #303133;
+  transition: all 0.3s ease;
+}
+
+.dark-theme .sftp-file-manager {
+  color: #ffffff;
 }
 
 .toolbar {
@@ -454,6 +464,12 @@ onMounted(() => {
   gap: 10px;
   align-items: center;
   flex-wrap: wrap;
+  transition: all 0.3s ease;
+}
+
+.dark-theme .toolbar {
+  background-color: rgba(30, 30, 30, 0.8);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .toolbar-buttons {
@@ -508,9 +524,20 @@ onMounted(() => {
   background-color: #ffffff;
 }
 
+.dark-theme .file-item {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
 .file-item:hover {
   background-color: #f5f7fa;
   border-color: #e4e7ed;
+}
+
+.dark-theme .file-item:hover {
+  background-color: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.2);
 }
 
 .file-item.selected {
@@ -518,8 +545,17 @@ onMounted(() => {
   border-color: #409eff;
 }
 
+.dark-theme .file-item.selected {
+  background-color: rgba(0, 122, 255, 0.2);
+  border-color: #007AFF;
+}
+
 .file-item.directory {
   font-weight: bold;
+}
+
+.dark-theme .file-item.directory .file-name {
+  color: #ffffff;
 }
 
 .file-icon {
@@ -538,11 +574,19 @@ onMounted(() => {
   color: #303133;
 }
 
+.dark-theme .file-name {
+  color: #ffffff !important;
+}
+
 .file-details {
   display: flex;
   gap: 15px;
   font-size: 12px;
   color: #606266;
+}
+
+.dark-theme .file-details {
+  color: #98989d;
 }
 
 .file-actions {
@@ -560,6 +604,10 @@ onMounted(() => {
   color: #909399;
 }
 
+.dark-theme .empty-directory {
+  color: #98989d;
+}
+
 .editor-container {
   height: 600px;
   display: flex;
@@ -572,6 +620,13 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  transition: all 0.3s ease;
+}
+
+.dark-theme .editor-header {
+  background-color: rgba(30, 30, 30, 0.8);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  color: #ffffff;
 }
 
 .file-editor-monaco {
