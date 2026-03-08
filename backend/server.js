@@ -14,6 +14,9 @@ const { getPublicKey, createCryptoMiddleware } = require('./utils/crypto');
 // SFTP routes
 const sftpQuickSimpleRouter = require('./routes/sftp-quick-simple');
 
+// WebDAV routes
+const webdavRouter = require('./routes/webdav');
+
 // Load environment variables
 dotenv.config();
 
@@ -54,6 +57,9 @@ app.get('/api/crypto/public-key', (req, res) => {
 
 // SFTP快速连接API路由（无认证版本）
 app.use('/api/sftp/quick', sftpQuickSimpleRouter);
+
+// WebDAV同步API路由
+app.use('/api/webdav', webdavRouter);
 
 // 快速连接API路由
 app.post('/api/quick-connect', (req, res) => {
