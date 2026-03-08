@@ -915,7 +915,11 @@ onMounted(() => {
   background-color: rgba(0, 0, 0, 0.06) !important;
 }
 
-/* Tree Selection Highlights */
+.dark-theme :deep(.el-tree-node__content:hover) {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Tree Selection Highlights - Leaf Nodes */
 :deep(.el-tree--highlight-current .el-tree-node.is-current > .el-tree-node__content:has(.is-leaf)) {
   background-color: #007AFF !important;
   color: white;
@@ -929,6 +933,15 @@ onMounted(() => {
 :deep(.el-tree--highlight-current .el-tree-node.is-current > .el-tree-node__content:has(.is-leaf) .tree-delete-btn:hover) {
   background-color: rgba(255, 255, 255, 0.2);
   color: white;
+}
+
+/* Tree Selection Highlights - Group Nodes (Non-leaf) */
+:deep(.el-tree--highlight-current .el-tree-node.is-current > .el-tree-node__content:not(:has(.is-leaf))) {
+  background-color: rgba(255, 255, 255, 0.15) !important;
+}
+
+.dark-theme :deep(.el-tree--highlight-current .el-tree-node.is-current > .el-tree-node__content:not(:has(.is-leaf))) {
+  background-color: rgba(255, 255, 255, 0.08) !important;
 }
 
 /* 右侧表单 */
