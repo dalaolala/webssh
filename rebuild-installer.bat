@@ -32,6 +32,7 @@ xcopy "dist-electron\win-unpacked\*" "%INSTALLER_DIR%\" /E /I /Y /H /R /Q
 
 echo 正在复制安装脚本...
 copy "scripts\install.bat" "%INSTALLER_DIR%\setup.bat" /Y >nul
+copy "scripts\uninstall.bat" "%INSTALLER_DIR%\uninstall.bat" /Y >nul
 
 echo 正在创建说明文档...
 (
@@ -43,6 +44,9 @@ echo 1. 双击运行 setup.bat 安装程序
 echo 2. 或直接运行 WebSSH.exe 使用
 echo.
 echo 安装后将创建桌面快捷方式
+echo.
+echo 卸载方法:
+echo 1. 双击运行 uninstall.bat 卸载程序
 echo.
 echo 版本: 1.0.0
 echo 日期: %date%
