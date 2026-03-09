@@ -29,6 +29,7 @@ function startBackend() {
   const socketHandler = require('../backend/socket/socketHandler');
   const { getPublicKey } = require('../backend/utils/crypto');
   const sftpQuickSimpleRouter = require('../backend/routes/sftp-quick-simple');
+  const webdavRouter = require('../backend/routes/webdav');
 
   // 加载环境变量
   dotenv.config();
@@ -62,6 +63,9 @@ function startBackend() {
 
   // SFTP快速连接API路由（无认证版本）
   app.use('/api/sftp/quick', sftpQuickSimpleRouter);
+
+  // WebDAV同步API路由
+  app.use('/api/webdav', webdavRouter);
 
   // 快速连接API路由
   app.post('/api/quick-connect', (req, res) => {
