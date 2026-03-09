@@ -42,16 +42,54 @@
         <span>清屏</span>
       </div>
     </div>
+
+    <!-- 多行粘贴确认对话框 -->
+    <div v-if="pasteDialog.visible" class="paste-dialog-overlay" @click.self="cancelPaste">
+      <div class="paste-dialog">
+        <div class="paste-dialog-header">
+          <div class="paste-dialog-title">
+            <el-icon class="title-icon"><Warning /></el-icon>
+            <span>粘贴多行内容确认</span>
+          </div>
+          <button class="paste-dialog-close" @click="cancelPaste">✕</button>
+        </div>
+
+        <div class="paste-dialog-body">
+          <div class="paste-dialog-hint">
+            检测到 <strong>{{ pasteDialog.lineCount }}</strong> 行内容，已自动去除行尾多余空格。可编辑后确认发送。
+          </div>
+
+          <!-- 编辑区 -->
+          <div class="paste-editor-wrap">
+            <div class="paste-editor-label">编辑内容</div>
+            <textarea
+              ref="pasteTextareaRef"
+              v-model="pasteDialog.editText"
+              class="paste-editor"
+              spellcheck="false"
+            ></textarea>
+          </div>
+        </div>
+
+        <div class="paste-dialog-footer">
+          <button class="paste-btn-cancel" @click="cancelPaste">取消</button>
+          <button class="paste-btn-send" @click="confirmPaste">
+            <el-icon><Promotion /></el-icon>
+            发送
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { Terminal } from 'xterm'
 import { FitAddon } from 'xterm-addon-fit'
 import { WebLinksAddon } from 'xterm-addon-web-links'
 import 'xterm/css/xterm.css'
-import { DocumentCopy, DocumentAdd, Select, Delete } from '@element-plus/icons-vue'
+import { DocumentCopy, DocumentAdd, Select, Delete, Warning, Promotion } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
 const props = defineProps({
@@ -80,6 +118,52 @@ const contextMenu = ref({
 })
 
 const localHasSelection = ref(false)
+
+// ---- Paste Dialog State ----
+const pasteTextareaRef = ref(null)
+const pasteDialog = ref({
+  visible: false,
+  editText: '',
+  lineCount: 0
+})
+
+/**
+ * 去除每行行尾空格，保留换行结构
+ */
+const trimLineTrailingSpaces = (text) => {
+  return text.split('\n').map(line => line.trimEnd()).join('\n')
+}
+
+/**
+ * 检测是否多行，如果是则弹出对话框，否则直接发送
+ */
+const handlePasteText = (text) => {
+  const trimmed = trimLineTrailingSpaces(text)
+  const lines = trimmed.split('\n')
+  if (lines.length > 1) {
+    pasteDialog.value.editText = trimmed
+    pasteDialog.value.lineCount = lines.length
+    pasteDialog.value.visible = true
+    nextTick(() => {
+      pasteTextareaRef.value?.focus()
+    })
+  } else {
+    emit('data', trimmed)
+  }
+}
+
+const confirmPaste = () => {
+  const text = pasteDialog.value.editText
+  if (text && props.isConnected) {
+    emit('data', text)
+  }
+  pasteDialog.value.visible = false
+}
+
+const cancelPaste = () => {
+  pasteDialog.value.visible = false
+}
+// ---- End Paste Dialog ----
 
 // Initialize terminal logic
 const initTerminal = () => {
@@ -212,7 +296,7 @@ const initTerminal = () => {
         event.preventDefault()
         navigator.clipboard.readText().then(text => {
           if (props.isConnected) {
-            emit('data', text)
+            handlePasteText(text)
           }
         }).catch(err => console.warn('Paste failed:', err))
         return false
@@ -385,7 +469,7 @@ const pasteFromContextMenu = async () => {
   if (props.isConnected) {
     try {
       const text = await navigator.clipboard.readText()
-      emit('data', text) // Send data back up to the parent to handle input
+      handlePasteText(text)
       hideContextMenu()
     } catch (error) {
       console.warn('粘贴失败:', error)
@@ -659,4 +743,178 @@ onUnmounted(() => {
 :deep(.xterm-selection-layer) {
   background-color: rgba(255, 255, 255, 0.25) !important;
 }
+
+/* ---- 多行粘贴确认对话框 ---- */
+.paste-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.paste-dialog {
+  background: #1e1e20;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+  width: min(680px, 92vw);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  animation: dialogIn 0.18s ease;
+  overflow: hidden;
+}
+
+@keyframes dialogIn {
+  from { opacity: 0; transform: scale(0.96) translateY(8px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.paste-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+.paste-dialog-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #f5f5f5;
+}
+
+.title-icon {
+  color: #ffcc00;
+  font-size: 16px;
+}
+
+.paste-dialog-close {
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.45);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1;
+  transition: color 0.15s, background 0.15s;
+}
+.paste-dialog-close:hover {
+  color: #f5f5f5;
+  background: rgba(255,255,255,0.1);
+}
+
+.paste-dialog-body {
+  padding: 16px 20px;
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.paste-dialog-hint {
+  font-size: 13px;
+  color: rgba(255,255,255,0.55);
+  line-height: 1.5;
+}
+.paste-dialog-hint strong {
+  color: #0a84ff;
+}
+
+
+.paste-editor-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.35);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 6px;
+}
+
+.paste-editor-wrap {
+  display: flex;
+  flex-direction: column;
+}
+
+
+
+.paste-editor {
+  width: 100%;
+  min-height: 120px;
+  max-height: 220px;
+  resize: vertical;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px;
+  color: #f0f0f0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  padding: 10px 12px;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+  tab-size: 4;
+}
+.paste-editor:focus {
+  border-color: #0a84ff;
+}
+
+
+.paste-dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 20px 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+.paste-btn-cancel {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 7px;
+  color: rgba(255,255,255,0.7);
+  font-size: 13px;
+  padding: 7px 18px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.paste-btn-cancel:hover {
+  background: rgba(255,255,255,0.14);
+  color: #f5f5f5;
+}
+
+.paste-btn-send {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #0a84ff;
+  border: none;
+  border-radius: 7px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 20px;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+.paste-btn-send:hover {
+  background: #2196f3;
+}
+.paste-btn-send:active {
+  transform: scale(0.97);
+}
+/* ---- End 多行粘贴对话框 ---- */
 </style>
