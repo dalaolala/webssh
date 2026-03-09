@@ -106,133 +106,175 @@
         <!-- 右侧：连接表单 -->
         <el-main class="form-main">
           <div class="connect-form-container">
-            <el-card class="connect-card">
-              <template #header>
-                <div class="card-header">
-                  <h3>SSH连接信息</h3>
-                  <p>输入服务器信息进行快速连接</p>
+
+            <!-- 页面标题区 -->
+            <div class="form-header">
+              <div class="form-header-icon">
+                <el-icon><Connection /></el-icon>
+              </div>
+              <div class="form-header-text">
+                <h2 class="form-title">SSH 连接</h2>
+                <p class="form-subtitle">输入服务器信息以建立安全连接</p>
+              </div>
+            </div>
+
+            <!-- 备份提示横幅 -->
+            <div class="backup-banner">
+              <el-icon class="banner-icon"><InfoFilled /></el-icon>
+              <span>更换设备会导致数据丢失，请及时通过导出功能备份数据</span>
+            </div>
+
+            <el-form :model="form" :rules="rules" ref="connectForm" label-position="top">
+
+              <!-- 分区：基本信息 -->
+              <div class="form-section">
+                <div class="section-title">基本信息</div>
+                <div class="field-row two-col">
+                  <div class="field-item">
+                    <el-form-item label="服务器名称" prop="name">
+                      <el-input v-model="form.name" placeholder="可选，如：生产服务器" />
+                    </el-form-item>
+                  </div>
+                  <div class="field-item">
+                    <el-form-item label="所属分组" prop="group">
+                      <el-select
+                        v-model="form.group"
+                        filterable
+                        allow-create
+                        default-first-option
+                        placeholder="可选，如：工作"
+                        style="width: 100%"
+                      >
+                        <el-option
+                          v-for="item in availableGroups"
+                          :key="item"
+                          :label="item"
+                          :value="item"
+                        />
+                      </el-select>
+                    </el-form-item>
+                  </div>
                 </div>
-              </template>
+              </div>
 
-              <el-alert
-                title="更换设备会导致数据丢失，请及时通过导出功能备份数据！"
-                type="warning"
-                show-icon
-                :closable="false"
-                style="margin-bottom: 20px;"
-              />
-              
-              <el-form :model="form" :rules="rules" ref="connectForm" label-width="100px">
-                <el-form-item label="服务器名称" prop="name">
-                  <el-input v-model="form.name" placeholder="请输入服务器名称（可选）" />
-                </el-form-item>
+              <!-- 分区：连接参数 -->
+              <div class="form-section">
+                <div class="section-title">连接参数</div>
+                <div class="field-row host-port-row">
+                  <div class="field-item host-field">
+                    <el-form-item label="主机地址" prop="host">
+                      <el-input v-model="form.host" placeholder="IP 地址或域名" />
+                    </el-form-item>
+                  </div>
+                  <div class="field-item port-field">
+                    <el-form-item label="端口" prop="port">
+                      <el-input-number
+                        v-model="form.port"
+                        :min="1"
+                        :max="65535"
+                        controls-position="right"
+                        style="width: 100%"
+                      />
+                    </el-form-item>
+                  </div>
+                </div>
+                <div class="field-row">
+                  <div class="field-item">
+                    <el-form-item label="用户名" prop="username">
+                      <el-input v-model="form.username" placeholder="SSH 用户名，如：root" autocomplete="off" />
+                    </el-form-item>
+                  </div>
+                </div>
+              </div>
 
-                <el-form-item label="所属分组" prop="group">
-                  <el-select
-                    v-model="form.group"
-                    filterable
-                    allow-create
-                    default-first-option
-                    placeholder="请输入或选择分组名称（可选）"
-                    style="width: 100%"
+              <!-- 分区：认证方式 -->
+              <div class="form-section">
+                <div class="section-title">认证方式</div>
+                <div class="auth-type-switcher">
+                  <button
+                    type="button"
+                    class="auth-tab"
+                    :class="{ active: form.authType === 'password' }"
+                    @click="form.authType = 'password'"
                   >
-                    <el-option
-                      v-for="item in availableGroups"
-                      :key="item"
-                      :label="item"
-                      :value="item"
-                    />
-                  </el-select>
-                </el-form-item>
-                
-                <el-form-item label="主机地址" prop="host">
-                  <el-input v-model="form.host" placeholder="请输入IP地址或域名" />
-                </el-form-item>
-                
-                <el-form-item label="端口" prop="port">
-                  <el-input-number v-model="form.port" :min="1" :max="65535" />
-                </el-form-item>
-                
-                <el-form-item label="用户名" prop="username">
-                  <el-input v-model="form.username" placeholder="请输入SSH用户名" autocomplete="off" />
-                </el-form-item>
-                
-                <el-form-item label="认证方式" prop="authType">
-                  <el-radio-group v-model="form.authType">
-                    <el-radio label="password">密码认证</el-radio>
-                    <el-radio label="key">私钥认证</el-radio>
-                  </el-radio-group>
-                </el-form-item>
-                
-                <el-form-item v-if="form.authType === 'password'" label="密码" prop="password">
-                  <el-input 
-                    v-model="form.password" 
-                    type="password" 
-                    placeholder="请输入SSH密码" 
-                    show-password
-                    autocomplete="new-password" 
-                  />
-                </el-form-item>
-                
-                <el-form-item v-if="form.authType === 'key'" label="私钥" prop="privateKey">
-                  <el-input 
-                    v-model="form.privateKey" 
-                    type="textarea" 
-                    :rows="6" 
-                    placeholder="请输入SSH私钥内容" 
-                  />
-                </el-form-item>
+                    <el-icon><Lock /></el-icon>
+                    密码认证
+                  </button>
+                  <button
+                    type="button"
+                    class="auth-tab"
+                    :class="{ active: form.authType === 'key' }"
+                    @click="form.authType = 'key'"
+                  >
+                    <el-icon><Key /></el-icon>
+                    私钥认证
+                  </button>
+                </div>
 
-                <!-- 保存密码复选框 -->
-                <el-form-item label=" ">
-                  <el-checkbox v-model="savePassword">
-                    保存密码到本地（记住凭据）
-                  </el-checkbox>
-                </el-form-item>
-                
-                <el-form-item>
-                  <el-button-group style="width: 100%; display: flex;">
-                    <el-button 
-                      type="success" 
-                      :loading="connecting" 
-                      @click="handleConnectSftp"
-                      style="flex: 1;"
-                    >
-                      <el-icon><Folder /></el-icon>
-                      连接 SFTP
-                    </el-button>
-                    <el-button 
-                      type="primary" 
-                      :loading="connecting" 
-                      @click="handleConnect"
-                      style="flex: 1;"
-                    >
-                      <el-icon><Connection /></el-icon>
-                      连接 SSH
-                    </el-button>
-                  </el-button-group>
-                </el-form-item>
-              </el-form>
-              
-              <!-- 连接状态提示 -->
-              <div v-if="connectionError" class="connection-error">
-                <el-alert 
-                  :title="connectionError" 
-                  type="error" 
-                  show-icon 
-                  :closable="false"
-                />
+                <div v-if="form.authType === 'password'" class="auth-content">
+                  <el-form-item label="密码" prop="password">
+                    <el-input
+                      v-model="form.password"
+                      type="password"
+                      placeholder="SSH 登录密码"
+                      show-password
+                      autocomplete="new-password"
+                    />
+                  </el-form-item>
+                </div>
+
+                <div v-if="form.authType === 'key'" class="auth-content">
+                  <el-form-item label="私钥内容" prop="privateKey">
+                    <el-input
+                      v-model="form.privateKey"
+                      type="textarea"
+                      :rows="6"
+                      placeholder="粘贴 PEM 格式私钥，以 -----BEGIN ... PRIVATE KEY----- 开头"
+                    />
+                  </el-form-item>
+                </div>
+
+                <div class="save-credential-row">
+                  <label class="save-credential-label">
+                    <span class="custom-checkbox" :class="{ checked: savePassword }" @click="savePassword = !savePassword">
+                      <el-icon v-if="savePassword"><Check /></el-icon>
+                    </span>
+                    <span class="save-text">记住凭据（保存到本地）</span>
+                  </label>
+                </div>
               </div>
-              
-              <div v-if="connecting" class="connecting-status">
-                <el-alert 
-                  title="正在连接..." 
-                  type="info" 
-                  show-icon 
-                  :closable="false"
-                />
+
+              <!-- 连接错误提示 -->
+              <div v-if="connectionError" class="error-banner">
+                <el-icon><CircleCloseFilled /></el-icon>
+                <span>{{ connectionError }}</span>
               </div>
-            </el-card>
+
+              <!-- 操作按钮 -->
+              <div class="action-row">
+                <button
+                  type="button"
+                  class="action-btn sftp-btn"
+                  :disabled="connecting"
+                  @click="handleConnectSftp"
+                >
+                  <el-icon v-if="!connecting"><Folder /></el-icon>
+                  <span class="btn-spinner" v-if="connecting"></span>
+                  连接 SFTP
+                </button>
+                <button
+                  type="button"
+                  class="action-btn ssh-btn"
+                  :disabled="connecting"
+                  @click="handleConnect"
+                >
+                  <el-icon v-if="!connecting"><Connection /></el-icon>
+                  <span class="btn-spinner" v-if="connecting"></span>
+                  连接 SSH
+                </button>
+              </div>
+
+            </el-form>
           </div>
         </el-main>
       </el-container>
@@ -253,7 +295,7 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Connection, Delete, Close, Monitor, Lock, Folder, Upload, Download, Search, Share } from '@element-plus/icons-vue'
+import { ArrowLeft, Connection, Delete, Close, Monitor, Lock, Folder, Upload, Download, Search, Share, Key, Check, InfoFilled, CircleCloseFilled } from '@element-plus/icons-vue'
 import { useTerminalStore } from '@/stores/terminal'
 import { useThemeStore } from '@/stores/theme'
 import CryptoJS from 'crypto-js'
@@ -983,241 +1025,608 @@ onMounted(() => {
 
 /* 右侧表单 */
 .form-main {
-  padding: 30px 40px;
+  padding: 0;
   overflow-y: auto;
   display: flex;
   justify-content: center;
   align-items: flex-start;
+  background: #f2f2f7;
+  transition: background 0.3s;
+}
+
+.dark-theme .form-main {
+  background: #000000;
 }
 
 .connect-form-container {
   width: 100%;
-  max-width: 580px;
+  max-width: 600px;
+  padding: 20px 28px 32px;
 }
 
-.connect-card {
-  margin-bottom: 20px;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+/* 页面标题 */
+.form-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
 }
 
-.card-header h3 {
-  margin: 0 0 4px 0;
-  color: #1d1d1f;
-  font-weight: 600;
-}
-
-.card-header p {
-  margin: 0;
-  color: #86868b;
-  font-size: 13px;
-}
-
-.connection-error,
-.connecting-status {
-  margin-top: 20px;
-}
-
-/* 暗黑主题样式 - 苹果风格 */
-.dark-theme .history-search :deep(.el-input__wrapper) {
-  background-color: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.15);
+.form-header-icon {
+  width: 36px;
+  height: 36px;
+  background: linear-gradient(135deg, #007AFF 0%, #0055CC 100%);
   border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 17px;
+  flex-shrink: 0;
+  box-shadow: 0 3px 8px rgba(0, 122, 255, 0.28);
 }
 
-.dark-theme .history-search :deep(.el-input__wrapper.is-focus) {
-  background-color: rgba(255, 255, 255, 0.12);
-  box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.15) !important;
+.form-title {
+  margin: 0 0 1px;
+  font-size: 18px;
+  font-weight: 700;
+  color: #1d1d1f;
+  letter-spacing: -0.4px;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
 }
 
-.dark-theme .history-search :deep(.el-input__inner) {
-  color: #ffffff;
+.form-subtitle {
+  margin: 0;
+  font-size: 12px;
+  color: #86868b;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
 }
 
-.dark-theme .aside-title {
-  color: #ffffff;
+.dark-theme .form-title { color: #f5f5f7; }
+.dark-theme .form-subtitle { color: #636366; }
+
+/* 备份提示横幅 */
+.backup-banner {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  background: rgba(255, 159, 10, 0.1);
+  border: 1px solid rgba(255, 159, 10, 0.25);
+  border-radius: 8px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: #b86e00;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  line-height: 1.4;
 }
 
-.dark-theme .tree-folder-icon {
-  color: #e5e5e5;
+.backup-banner .banner-icon {
+  font-size: 13px;
+  flex-shrink: 0;
+  color: #FF9F0A;
 }
 
-.dark-theme .tree-node-label {
-  color: #e5e5e5;
+.dark-theme .backup-banner {
+  background: rgba(255, 159, 10, 0.08);
+  border-color: rgba(255, 159, 10, 0.2);
+  color: #FF9F0A;
 }
 
-.dark-theme .tree-node.is-leaf .tree-node-label {
-  color: #d1d1d1;
-}
-
-.dark-theme ::deep(.el-tree-node__content:hover) {
-  background-color: rgba(255, 255, 255, 0.06) !important;
-}
-
-.dark-theme .connect-card {
-  background-color: rgba(30, 30, 30, 0.8);
-  border-color: rgba(255, 255, 255, 0.12);
+/* 分区卡片 */
+.form-section {
+  background: #ffffff;
   border-radius: 12px;
+  padding: 14px 16px 4px;
+  margin-bottom: 10px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.04);
+  transition: background 0.3s, box-shadow 0.3s;
 }
 
-.dark-theme :deep(.el-card__header) {
-  border-bottom-color: rgba(255, 255, 255, 0.1);
+.dark-theme .form-section {
+  background: #1c1c1e;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06);
 }
 
-.dark-theme .card-header h3 {
-  color: #ffffff;
+.section-title {
+  font-size: 10.5px;
   font-weight: 600;
+  color: #86868b;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
 }
 
-.dark-theme .card-header p {
-  color: #98989d;
+.dark-theme .section-title { color: #636366; }
+
+/* 字段行布局 */
+.field-row {
+  display: flex;
+  gap: 10px;
+}
+
+.field-row.two-col .field-item {
+  flex: 1;
+  min-width: 0;
+}
+
+.field-row.host-port-row .host-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.field-row.host-port-row .port-field {
+  width: 110px;
+  flex-shrink: 0;
+}
+
+.field-item {
+  flex: 1;
+  min-width: 0;
+}
+
+/* el-form-item label 覆盖 */
+:deep(.el-form-item) {
+  margin-bottom: 12px;
+}
+
+:deep(.el-form-item.is-error) {
+  margin-bottom: 4px;
+}
+
+:deep(.el-form-item__label) {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: #636366;
+  padding-bottom: 3px;
+  line-height: 1.3;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
 }
 
 .dark-theme :deep(.el-form-item__label) {
-  color: #d1d1d1;
-  font-weight: 500;
+  color: #8e8e93;
 }
 
-.dark-theme :deep(.el-input__wrapper) {
-  background-color: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.15);
+/* 通用输入框样式 */
+:deep(.el-input__wrapper) {
+  border-radius: 8px;
+  border: 1.5px solid rgba(0,0,0,0.1);
+  box-shadow: none !important;
+  background: #f9f9fb;
+  transition: all 0.2s ease;
+  padding: 0 10px;
+}
+
+:deep(.el-input__wrapper:hover) {
+  border-color: rgba(0,0,0,0.2);
+}
+
+:deep(.el-input__wrapper.is-focus) {
+  border-color: #007AFF !important;
+  background: #ffffff !important;
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.12) !important;
+}
+
+:deep(.el-input__inner) {
+  font-size: 13.5px;
+  height: 32px;
+  color: #1c1c1e;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+}
+
+:deep(.el-input-number) {
+  width: 100%;
+}
+
+:deep(.el-input-number .el-input__wrapper) {
   border-radius: 8px;
 }
 
-.dark-theme :deep(.el-input__wrapper.is-focus),
-.dark-theme :deep(.el-input__wrapper.is-filled) {
-  background-color: rgba(255, 255, 255, 0.12);
+/* Textarea */
+:deep(.el-textarea__inner) {
+  border-radius: 8px;
+  border: 1.5px solid rgba(0,0,0,0.1);
+  box-shadow: none !important;
+  background: #f9f9fb;
+  font-size: 12.5px;
+  font-family: "SF Mono", "Monaco", "Menlo", Consolas, monospace;
+  color: #1c1c1e;
+  resize: vertical;
+  transition: all 0.2s ease;
+  padding: 8px 10px;
+}
+
+:deep(.el-textarea__inner:hover) {
+  border-color: rgba(0,0,0,0.2);
+}
+
+:deep(.el-textarea__inner:focus) {
+  border-color: #007AFF !important;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.12) !important;
+  outline: none;
+}
+
+/* Select 下拉 */
+:deep(.el-select__wrapper) {
+  border-radius: 8px;
+  border: 1.5px solid rgba(0,0,0,0.1);
+  box-shadow: none !important;
+  background: #f9f9fb;
+  height: auto;
+  min-height: 34px;
+  transition: all 0.2s ease;
+}
+
+:deep(.el-select__wrapper:hover) {
+  border-color: rgba(0,0,0,0.2);
+}
+
+:deep(.el-select__wrapper.is-focused) {
+  border-color: #007AFF !important;
+  background: #ffffff !important;
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.12) !important;
+}
+
+:deep(.el-select__selected-item) {
+  font-size: 13.5px;
+  color: #1c1c1e;
+}
+
+:deep(.el-select__placeholder) {
+  font-size: 13.5px;
+  color: #c7c7cc;
+}
+
+/* 认证方式切换 */
+.auth-type-switcher {
+  display: flex;
+  gap: 0;
+  background: rgba(0,0,0,0.05);
+  border-radius: 9px;
+  padding: 3px;
+  margin-bottom: 12px;
+}
+
+.dark-theme .auth-type-switcher {
+  background: rgba(255,255,255,0.06);
+}
+
+.auth-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: none;
+  background: transparent;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #636366;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+}
+
+.auth-tab.active {
+  background: #ffffff;
+  color: #1c1c1e;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.04);
+}
+
+.dark-theme .auth-tab {
+  color: #8e8e93;
+}
+
+.dark-theme .auth-tab.active {
+  background: #2c2c2e;
+  color: #f5f5f7;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+}
+
+.auth-content {
+  margin-top: 2px;
+}
+
+/* 记住凭据 */
+.save-credential-row {
+  padding-bottom: 4px;
+  margin-bottom: 2px;
+}
+
+.save-credential-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.custom-checkbox {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1.5px solid rgba(0,0,0,0.2);
+  background: #f9f9fb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: #fff;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.custom-checkbox.checked {
+  background: #007AFF;
   border-color: #007AFF;
-  box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.15) !important;
+}
+
+.dark-theme .custom-checkbox {
+  border-color: rgba(255,255,255,0.2);
+  background: rgba(255,255,255,0.06);
+}
+
+.dark-theme .custom-checkbox.checked {
+  background: #007AFF;
+  border-color: #007AFF;
+}
+
+.save-text {
+  font-size: 13px;
+  color: #48484a;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+}
+
+.dark-theme .save-text { color: #8e8e93; }
+
+/* 错误横幅 */
+.error-banner {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 12px;
+  background: rgba(255, 59, 48, 0.08);
+  border: 1px solid rgba(255, 59, 48, 0.2);
+  border-radius: 8px;
+  margin-bottom: 10px;
+  font-size: 12.5px;
+  color: #FF3B30;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+}
+
+/* 操作按钮行 */
+.action-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.action-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 18px;
+  height: 40px;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  letter-spacing: -0.2px;
+}
+
+.action-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.sftp-btn {
+  background: rgba(52, 199, 89, 0.12);
+  color: #34C759;
+  border: 1.5px solid rgba(52, 199, 89, 0.25);
+}
+
+.sftp-btn:not(:disabled):hover {
+  background: rgba(52, 199, 89, 0.2);
+  border-color: rgba(52, 199, 89, 0.4);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(52, 199, 89, 0.2);
+}
+
+.sftp-btn:not(:disabled):active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+.ssh-btn {
+  background: #007AFF;
+  color: #ffffff;
+  border: 1.5px solid transparent;
+  box-shadow: 0 2px 8px rgba(0, 122, 255, 0.3);
+}
+
+.ssh-btn:not(:disabled):hover {
+  background: #0066d6;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(0, 122, 255, 0.4);
+}
+
+.ssh-btn:not(:disabled):active {
+  transform: translateY(0);
+  background: #005cc8;
+  box-shadow: 0 2px 6px rgba(0, 122, 255, 0.3);
+}
+
+.dark-theme .sftp-btn {
+  background: rgba(52, 199, 89, 0.1);
+  border-color: rgba(52, 199, 89, 0.2);
+}
+
+/* 按钮旋转动画 */
+.btn-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255,255,255,0.4);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+.sftp-btn .btn-spinner {
+  border-color: rgba(52, 199, 89, 0.3);
+  border-top-color: #34C759;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* 暗黑主题覆盖 */
+.dark-theme :deep(.el-input__wrapper) {
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.1);
+}
+
+.dark-theme :deep(.el-input__wrapper:hover) {
+  border-color: rgba(255,255,255,0.2);
+}
+
+.dark-theme :deep(.el-input__wrapper.is-focus) {
+  background: rgba(255,255,255,0.1) !important;
+  border-color: #007AFF !important;
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.15) !important;
 }
 
 .dark-theme :deep(.el-input__inner) {
-  background-color: transparent !important;
-  color: #ffffff;
+  color: #f5f5f7;
+  background: transparent !important;
 }
 
 .dark-theme :deep(.el-textarea__inner) {
-  background-color: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.15);
-  color: #ffffff;
-  border-radius: 8px;
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.1);
+  color: #f5f5f7;
 }
 
 .dark-theme :deep(.el-textarea__inner:focus) {
-  background-color: rgba(255, 255, 255, 0.12);
-  border-color: #007AFF;
-  box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.15) !important;
+  background: rgba(255,255,255,0.1);
+  border-color: #007AFF !important;
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.15) !important;
 }
 
-.dark-theme :deep(.el-radio__label) {
-  color: #d1d1d1;
-}
-
-.dark-theme :deep(.el-checkbox__label) {
-  color: #d1d1d1;
-}
-
-/* Select 下拉框优化 - 统一背景色 */
 .dark-theme :deep(.el-select__wrapper) {
-  background-color: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.15);
-  border-radius: 8px;
-  box-shadow: none !important;
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.1);
 }
 
 .dark-theme :deep(.el-select__wrapper.is-focused) {
-  background-color: rgba(255, 255, 255, 0.12);
-  border-color: #007AFF;
-  box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.15) !important;
+  background: rgba(255,255,255,0.1) !important;
+  border-color: #007AFF !important;
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.15) !important;
 }
 
 .dark-theme :deep(.el-select__selected-item) {
-  color: #ffffff;
+  color: #f5f5f7;
 }
 
 .dark-theme :deep(.el-select__placeholder) {
-  color: #98989d;
+  color: #48484a;
 }
 
-.dark-theme :deep(.el-select__popper) {
-  background-color: rgba(30, 30, 30, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-}
-
-.dark-theme :deep(.el-select-dropdown__item) {
-  color: #ffffff;
-}
-
-.dark-theme :deep(.el-select-dropdown__item:hover) {
-  background-color: rgba(255, 255, 255, 0.08);
-}
-
-.dark-theme :deep(.el-select-dropdown__item.is-selected) {
-  background-color: rgba(0, 122, 255, 0.15);
-  color: #007AFF;
-  font-weight: 500;
-}
-
-.dark-theme :deep(.el-button) {
-  border-radius: 8px;
-}
-
-.dark-theme :deep(.el-input-number) {
-  background-color: rgba(255, 255, 255, 0.08);
-}
-
-.dark-theme :deep(.el-input-number .el-input__inner) {
-  background-color: transparent;
-  color: #ffffff;
-}
-
-/* Input Number 加减按钮样式 */
 .dark-theme :deep(.el-input-number__decrease),
 .dark-theme :deep(.el-input-number__increase) {
-  background-color: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.15);
-  color: #ffffff;
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.1);
+  color: #f5f5f7;
 }
 
 .dark-theme :deep(.el-input-number__decrease:hover),
 .dark-theme :deep(.el-input-number__increase:hover) {
-  background-color: rgba(255, 255, 255, 0.12);
-  color: #ffffff;
+  background: rgba(255,255,255,0.12);
 }
 
-/* Input 图标 - 统一颜色 */
-.dark-theme :deep(.el-input__prefix),
 .dark-theme :deep(.el-input__suffix) {
-  color: #98989d;
+  color: #636366;
 }
 
-.dark-theme :deep(.el-input__prefix-inner > .el-icon),
-.dark-theme :deep(.el-input__suffix-inner > .el-icon) {
-  color: #98989d;
+/* Select 下拉弹出层 */
+:deep(.el-select__popper) {
+  border-radius: 10px;
+  border: 1px solid rgba(0,0,0,0.08);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+  overflow: hidden;
 }
 
-.dark-theme :deep(.el-input__wrapper:hover .el-input__prefix),
-.dark-theme :deep(.el-input__wrapper:hover .el-input__suffix) {
-  color: #d1d1d1;
+.dark-theme :deep(.el-select__popper) {
+  background: #1c1c1e;
+  border-color: rgba(255,255,255,0.1);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
 }
 
-/* 响应式设计 */
+.dark-theme :deep(.el-select-dropdown__item) {
+  color: #f5f5f7;
+}
+
+.dark-theme :deep(.el-select-dropdown__item:hover) {
+  background: rgba(255,255,255,0.06);
+}
+
+.dark-theme :deep(.el-select-dropdown__item.is-selected) {
+  background: rgba(0,122,255,0.12);
+  color: #007AFF;
+}
+
+/* 校验错误样式覆盖 */
+:deep(.el-form-item.is-error .el-input__wrapper) {
+  border-color: #FF3B30 !important;
+  box-shadow: 0 0 0 3px rgba(255, 59, 48, 0.1) !important;
+}
+
+:deep(.el-form-item.is-error .el-textarea__inner) {
+  border-color: #FF3B30 !important;
+  box-shadow: 0 0 0 3px rgba(255, 59, 48, 0.1) !important;
+}
+
+:deep(.el-form-item__error) {
+  position: static;
+  font-size: 11.5px;
+  color: #FF3B30;
+  margin-top: 4px;
+  padding-top: 0;
+  line-height: 1.3;
+}
+
+/* 响应式 */
 @media (max-width: 768px) {
-  .main-body {
+  .connect-form-container {
+    padding: 16px 14px 24px;
+  }
+  
+  .field-row.two-col {
     flex-direction: column;
+    gap: 0;
   }
   
-  .history-aside {
-    width: 100% !important;
-    max-height: 200px;
-    border-right: none;
-    border-bottom: 1px solid #e4e7ed;
+  .field-row.host-port-row {
+    flex-direction: column;
+    gap: 0;
   }
   
-  .form-main {
-    padding: 20px;
+  .field-row.host-port-row .port-field {
+    width: 100%;
+  }
+  
+  .action-row {
+    flex-direction: column;
   }
 }
 </style>
