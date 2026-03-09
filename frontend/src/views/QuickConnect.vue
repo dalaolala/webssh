@@ -239,119 +239,13 @@
     </el-container>
   </div>
 
-  <!-- WebDAV 同步对话框 -->
-  <el-dialog
-    v-model="webdavDialogVisible"
-    title="WebDAV 同步"
-    width="500px"
-    :close-on-click-modal="false"
-    class="webdav-dialog"
-    :class="{ 'dark-dialog': isDark }"
-  >
-    <el-tabs v-model="webdavActiveTab">
-      <!-- 配置 Tab -->
-      <el-tab-pane label="配置" name="config">
-        <el-form :model="webdavConfig" label-width="90px" style="margin-top: 8px;">
-          <el-form-item label="服务器地址">
-            <el-input
-              v-model="webdavConfig.url"
-              placeholder="例：https://dav.example.com/dav/servers.enc"
-            />
-            <div class="webdav-form-tip">完整的文件路径 URL，如 https://dav.box.com/dav/webssh.enc</div>
-          </el-form-item>
-          <el-form-item label="用户名">
-            <el-input v-model="webdavConfig.username" placeholder="WebDAV 用户名（可选）" autocomplete="off" />
-          </el-form-item>
-          <el-form-item label="密码">
-            <el-input
-              v-model="webdavConfig.password"
-              type="password"
-              placeholder="WebDAV 密码（可选）"
-              show-password
-              autocomplete="new-password"
-            />
-          </el-form-item>
-          <el-form-item label="加密密钥">
-            <el-input
-              v-model="webdavConfig.encryptKey"
-              type="password"
-              placeholder="用于加密同步文件（至少6位）"
-              show-password
-            />
-            <div class="webdav-form-tip">文件将使用此密钥加密后存储到 WebDAV，请妥善保管</div>
-          </el-form-item>
-        </el-form>
-        <div style="display: flex; gap: 8px; margin-top: 4px;">
-          <el-button size="small" @click="testWebdavConnection" :loading="webdavTesting">
-            测试连接
-          </el-button>
-          <el-button size="small" type="primary" @click="saveWebdavConfig">
-            保存配置
-          </el-button>
-        </div>
-      </el-tab-pane>
-
-      <!-- 同步 Tab -->
-      <el-tab-pane label="同步" name="sync">
-        <div class="webdav-sync-area">
-          <div class="webdav-sync-info" v-if="webdavConfig.url">
-            <el-icon><Link /></el-icon>
-            <span>{{ webdavConfig.url }}</span>
-          </div>
-          <div class="webdav-sync-info warning" v-else>
-            <el-icon><Warning /></el-icon>
-            <span>请先在"配置"标签页设置 WebDAV 地址</span>
-          </div>
-
-          <div class="webdav-sync-actions">
-            <el-card class="sync-action-card" shadow="never">
-              <div class="sync-action-content">
-                <div class="sync-action-icon upload-icon">
-                  <el-icon size="28"><Upload /></el-icon>
-                </div>
-                <div class="sync-action-text">
-                  <div class="sync-action-title">上传到 WebDAV</div>
-                  <div class="sync-action-desc">将本地 {{ historyList.length }} 条服务器记录加密后上传</div>
-                </div>
-                <el-button
-                  type="primary"
-                  :loading="webdavUploading"
-                  :disabled="!webdavConfig.url || historyList.length === 0"
-                  @click="syncUploadToWebdav"
-                >
-                  上传
-                </el-button>
-              </div>
-            </el-card>
-
-            <el-card class="sync-action-card" shadow="never">
-              <div class="sync-action-content">
-                <div class="sync-action-icon download-icon">
-                  <el-icon size="28"><Download /></el-icon>
-                </div>
-                <div class="sync-action-text">
-                  <div class="sync-action-title">从 WebDAV 下载</div>
-                  <div class="sync-action-desc">从 WebDAV 下载并合并到本地历史记录</div>
-                </div>
-                <el-button
-                  :loading="webdavDownloading"
-                  :disabled="!webdavConfig.url"
-                  @click="syncDownloadFromWebdav"
-                >
-                  下载
-                </el-button>
-              </div>
-            </el-card>
-          </div>
-
-          <div class="webdav-last-sync" v-if="webdavLastSync">
-            <el-icon><Clock /></el-icon>
-            上次同步：{{ webdavLastSync }}
-          </div>
-        </div>
-      </el-tab-pane>
-    </el-tabs>
-  </el-dialog>
+  <!-- WebDAV 同步组件 -->
+  <WebdavSync
+    ref="webdavSyncRef"
+    :records="historyList"
+    :record-count="historyList.length"
+    @merged="onWebdavMerged"
+  />
 </template>
 
 <script setup>
@@ -359,10 +253,11 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Connection, Delete, Close, Monitor, Lock, Folder, Upload, Download, Search, Share, Link, Warning, Clock } from '@element-plus/icons-vue'
+import { ArrowLeft, Connection, Delete, Close, Monitor, Lock, Folder, Upload, Download, Search, Share } from '@element-plus/icons-vue'
 import { useTerminalStore } from '@/stores/terminal'
 import { useThemeStore } from '@/stores/theme'
 import CryptoJS from 'crypto-js'
+import WebdavSync from '@/components/WebdavSync.vue'
 
 const HISTORY_KEY = 'webssh_quick_connect_history'
 
@@ -839,251 +734,19 @@ const submitConnection = async (mode) => {
 
 // ========== WebDAV 同步 ==========
 
-const WEBDAV_CONFIG_KEY = 'webssh_webdav_config'
-const WEBDAV_LAST_SYNC_KEY = 'webssh_webdav_last_sync'
-
-const webdavDialogVisible = ref(false)
-const webdavActiveTab = ref('config')
-const webdavTesting = ref(false)
-const webdavUploading = ref(false)
-const webdavDownloading = ref(false)
-const webdavLastSync = ref('')
-
-const webdavConfig = reactive({
-  url: '',
-  username: '',
-  password: '',
-  encryptKey: ''
-})
-
-const loadWebdavConfig = () => {
-  try {
-    const raw = localStorage.getItem(WEBDAV_CONFIG_KEY)
-    if (raw) {
-      const saved = JSON.parse(raw)
-      webdavConfig.url = saved.url || ''
-      webdavConfig.username = saved.username || ''
-      webdavConfig.password = saved.password || ''
-      webdavConfig.encryptKey = saved.encryptKey || ''
-    }
-    webdavLastSync.value = localStorage.getItem(WEBDAV_LAST_SYNC_KEY) || ''
-  } catch {
-    // ignore
-  }
-}
-
-const saveWebdavConfig = () => {
-  if (!webdavConfig.url) {
-    ElMessage.warning('请填写 WebDAV 服务器地址')
-    return
-  }
-  if (webdavConfig.encryptKey && webdavConfig.encryptKey.length < 6) {
-    ElMessage.warning('加密密钥至少需要 6 位')
-    return
-  }
-  localStorage.setItem(WEBDAV_CONFIG_KEY, JSON.stringify({
-    url: webdavConfig.url,
-    username: webdavConfig.username,
-    password: webdavConfig.password,
-    encryptKey: webdavConfig.encryptKey
-  }))
-  ElMessage.success('配置已保存')
-}
+const webdavSyncRef = ref()
 
 const openWebdavDialog = () => {
-  loadWebdavConfig()
-  webdavDialogVisible.value = true
-  webdavActiveTab.value = webdavConfig.url ? 'sync' : 'config'
+  webdavSyncRef.value?.open()
 }
 
-const testWebdavConnection = async () => {
-  if (!webdavConfig.url) {
-    ElMessage.warning('请先填写 WebDAV 服务器地址')
-    return
-  }
-  webdavTesting.value = true
-  try {
-    const response = await fetch('/api/webdav/test', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        url: webdavConfig.url,
-        username: webdavConfig.username,
-        password: webdavConfig.password
-      })
-    })
-    const result = await response.json()
-    if (result.success) {
-      ElMessage.success('连接测试成功！')
-    } else {
-      ElMessage.error(result.message || '连接失败')
-    }
-  } catch (error) {
-    ElMessage.error('请求失败：' + error.message)
-  } finally {
-    webdavTesting.value = false
-  }
-}
-
-const syncUploadToWebdav = async () => {
-  if (!webdavConfig.url) {
-    ElMessage.warning('请先配置 WebDAV 地址')
-    return
-  }
-  if (historyList.value.length === 0) {
-    ElMessage.warning('没有服务器记录可同步')
-    return
-  }
-
-  let encryptKey = webdavConfig.encryptKey
-  if (!encryptKey) {
-    try {
-      const { value } = await ElMessageBox.prompt(
-        '请输入加密密钥（至少6位），用于保护 WebDAV 上的文件安全：',
-        '设置加密密钥',
-        {
-          confirmButtonText: '确认上传',
-          cancelButtonText: '取消',
-          inputType: 'password',
-          inputValidator: (v) => (!v || v.trim().length < 6) ? '密钥至少6位' : true,
-          inputErrorMessage: '密钥至少6位'
-        }
-      )
-      encryptKey = value.trim()
-      webdavConfig.encryptKey = encryptKey
-      saveWebdavConfig()
-    } catch {
-      return
-    }
-  }
-
-  webdavUploading.value = true
-  try {
-    const jsonStr = JSON.stringify(historyList.value, null, 2)
-    const encryptedContent = CryptoJS.AES.encrypt(jsonStr, encryptKey).toString()
-
-    const response = await fetch('/api/webdav/upload', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        url: webdavConfig.url,
-        username: webdavConfig.username,
-        password: webdavConfig.password,
-        content: encryptedContent
-      })
-    })
-    const result = await response.json()
-    if (result.success) {
-      const now = new Date().toLocaleString('zh-CN')
-      webdavLastSync.value = now
-      localStorage.setItem(WEBDAV_LAST_SYNC_KEY, now)
-      ElMessage.success(`已将 ${historyList.value.length} 条记录加密上传到 WebDAV`)
-    } else {
-      ElMessage.error(result.message || '上传失败')
-    }
-  } catch (error) {
-    ElMessage.error('上传失败：' + error.message)
-  } finally {
-    webdavUploading.value = false
-  }
-}
-
-const syncDownloadFromWebdav = async () => {
-  if (!webdavConfig.url) {
-    ElMessage.warning('请先配置 WebDAV 地址')
-    return
-  }
-
-  let encryptKey = webdavConfig.encryptKey
-  if (!encryptKey) {
-    try {
-      const { value } = await ElMessageBox.prompt(
-        '请输入加密密钥（上传时设置的密钥）：',
-        '输入解密密钥',
-        {
-          confirmButtonText: '确认下载',
-          cancelButtonText: '取消',
-          inputType: 'password',
-          inputValidator: (v) => (!v || v.trim().length < 6) ? '密钥至少6位' : true,
-          inputErrorMessage: '密钥至少6位'
-        }
-      )
-      encryptKey = value.trim()
-    } catch {
-      return
-    }
-  }
-
-  webdavDownloading.value = true
-  try {
-    const response = await fetch('/api/webdav/download', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        url: webdavConfig.url,
-        username: webdavConfig.username,
-        password: webdavConfig.password
-      })
-    })
-    const result = await response.json()
-    if (!result.success) {
-      ElMessage.error(result.message || '下载失败')
-      return
-    }
-
-    // 解密
-    let jsonStr = ''
-    try {
-      const bytes = CryptoJS.AES.decrypt(result.content, encryptKey)
-      jsonStr = bytes.toString(CryptoJS.enc.Utf8)
-      if (!jsonStr) throw new Error('解密内容为空')
-    } catch {
-      ElMessage.error('解密失败，请确认密钥是否正确')
-      return
-    }
-
-    const imported = JSON.parse(jsonStr)
-    if (!Array.isArray(imported)) {
-      ElMessage.error('文件格式错误')
-      return
-    }
-
-    const valid = imported.filter(item => item.host && item.username)
-    if (valid.length === 0) {
-      ElMessage.error('未找到有效记录')
-      return
-    }
-
-    // 合并
-    let merged = [...historyList.value]
-    let addedCount = 0
-    valid.forEach(item => {
-      const idx = merged.findIndex(
-        h => h.host === item.host && h.port === item.port && h.username === item.username
-      )
-      if (idx !== -1) merged.splice(idx, 1)
-      addedCount++
-      merged.unshift(item)
-    })
-
-    historyList.value = merged
-    persistHistory()
-
-    const now = new Date().toLocaleString('zh-CN')
-    webdavLastSync.value = now
-    localStorage.setItem(WEBDAV_LAST_SYNC_KEY, now)
-
-    ElMessage.success(`从 WebDAV 合并了 ${addedCount} 条记录`)
-  } catch (error) {
-    ElMessage.error('下载失败：' + error.message)
-  } finally {
-    webdavDownloading.value = false
-  }
+const onWebdavMerged = (mergedList) => {
+  historyList.value = mergedList
+  persistHistory()
 }
 
 onMounted(() => {
   loadHistory()
-  loadWebdavConfig()
 })
 </script>
 
@@ -1557,98 +1220,4 @@ onMounted(() => {
     padding: 20px;
   }
 }
-
-/* WebDAV 对话框样式 */
-.webdav-form-tip {
-  font-size: 12px;
-  color: #86868b;
-  margin-top: 4px;
-  line-height: 1.4;
-}
-
-.webdav-sync-area {
-  padding: 4px 0;
-}
-
-.webdav-sync-info {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: #007AFF;
-  background: rgba(0, 122, 255, 0.06);
-  border-radius: 8px;
-  padding: 8px 12px;
-  margin-bottom: 16px;
-  word-break: break-all;
-}
-
-.webdav-sync-info.warning {
-  color: #e6a23c;
-  background: rgba(230, 162, 60, 0.08);
-}
-
-.webdav-sync-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.sync-action-card {
-  border-radius: 10px !important;
-}
-
-.sync-action-content {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-.sync-action-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.upload-icon {
-  background: rgba(0, 122, 255, 0.1);
-  color: #007AFF;
-}
-
-.download-icon {
-  background: rgba(52, 199, 89, 0.1);
-  color: #34C759;
-}
-
-.sync-action-text {
-  flex: 1;
-}
-
-.sync-action-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #1d1d1f;
-  margin-bottom: 2px;
-}
-
-.sync-action-desc {
-  font-size: 12px;
-  color: #86868b;
-}
-
-.webdav-last-sync {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: #86868b;
-  margin-top: 16px;
-  padding-top: 12px;
-  border-top: 1px solid rgba(0, 0, 0, 0.06);
-}
-
 </style>
