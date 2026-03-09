@@ -15,7 +15,7 @@ release.bat
 
 # 或手动推送 tag
 git tag v1.0.0
-git push origin v1.0.0
+git push origin feature-local v1.0.0
 ```
 
 ### 发布流程
