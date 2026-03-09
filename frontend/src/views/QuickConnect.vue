@@ -3,61 +3,60 @@
     <el-container class="quick-connect-container">
       <!-- 主内容区域：左侧历史树 + 右侧表单 -->
       <el-container class="main-body">
-        <!-- 左侧：连接历史树 -->
-        <el-aside class="history-aside" width="300px">
+        <!-- 左侧：主机列表 -->
+        <aside class="history-aside">
+          <input
+            ref="fileInput"
+            type="file"
+            accept=".json,.enc"
+            style="display: none;"
+            @change="handleImportFile"
+          />
+
+          <!-- 标题栏 -->
           <div class="aside-header">
             <span class="aside-title">主机列表</span>
-            <input 
-              ref="fileInput" 
-              type="file" 
-              accept=".json,.enc" 
-              style="display: none;" 
-              @change="handleImportFile" 
-            />
-          </div>
-          <div class="aside-actions">
-            <el-tooltip content="导入" placement="top">
-              <el-button size="small" text @click="triggerImport">
-                <el-icon><Upload /></el-icon>
-              </el-button>
-            </el-tooltip>
-            <el-tooltip content="导出" placement="top">
-              <el-button 
-                size="small" 
-                text
-                :disabled="historyList.length === 0"
-                @click="exportHistory"
-              >
-                <el-icon><Download /></el-icon>
-              </el-button>
-            </el-tooltip>
-            <el-tooltip content="WebDAV 同步" placement="top">
-              <el-button size="small" text @click="openWebdavDialog">
-                <el-icon><Share /></el-icon>
-              </el-button>
-            </el-tooltip>
-            <el-button 
-              v-if="historyList.length > 0"
-              type="danger" 
-              size="small" 
-              text 
-              @click="clearAllHistory"
-            >
-              <el-icon><Delete /></el-icon>
-              清空
-            </el-button>
+            <div class="aside-header-actions">
+              <el-tooltip content="导入" placement="bottom">
+                <button class="icon-btn" @click="triggerImport">
+                  <el-icon><Upload /></el-icon>
+                </button>
+              </el-tooltip>
+              <el-tooltip content="导出" placement="bottom">
+                <button class="icon-btn" :disabled="historyList.length === 0" @click="exportHistory">
+                  <el-icon><Download /></el-icon>
+                </button>
+              </el-tooltip>
+              <el-tooltip content="WebDAV 同步" placement="bottom">
+                <button class="icon-btn" @click="openWebdavDialog">
+                  <el-icon><Share /></el-icon>
+                </button>
+              </el-tooltip>
+              <el-tooltip v-if="historyList.length > 0" content="清空列表" placement="bottom">
+                <button class="icon-btn icon-btn--danger" @click="clearAllHistory">
+                  <el-icon><Delete /></el-icon>
+                </button>
+              </el-tooltip>
+            </div>
           </div>
 
-          <div class="history-search" v-if="historyList.length > 0">
-            <el-input
-              v-model="searchKeyword"
-              placeholder="搜索名称或IP..."
-              clearable
-              prefix-icon="Search"
-              size="small"
-            />
+          <!-- 搜索框 -->
+          <div class="aside-search" v-if="historyList.length > 0">
+            <div class="search-wrap">
+              <el-icon class="search-icon"><Search /></el-icon>
+              <input
+                v-model="searchKeyword"
+                class="search-input"
+                placeholder="搜索名称或 IP…"
+                @input="historyTreeRef?.filter(searchKeyword)"
+              />
+              <button v-if="searchKeyword" class="search-clear" @click="searchKeyword = ''; historyTreeRef?.filter('')">
+                <el-icon><CircleClose /></el-icon>
+              </button>
+            </div>
           </div>
 
+          <!-- 主机树 -->
           <div v-if="historyList.length > 0" class="history-tree">
             <el-tree
               ref="historyTreeRef"
@@ -73,23 +72,33 @@
             >
               <template #default="{ node, data }">
                 <div class="tree-node" :class="{ 'is-leaf': data.isLeaf }">
-                  <el-icon v-if="!data.isLeaf" class="tree-folder-icon"><Folder /></el-icon>
-                  <el-icon v-else class="tree-server-icon"><Monitor /></el-icon>
-                  <span class="tree-node-label">{{ node.label }}</span>
-                  <div class="tree-node-actions" v-if="data.isLeaf">
-                    <el-tag v-if="data.record?.hasSavedCredential" size="small" type="success" class="tree-tag">
-                      <el-icon style="vertical-align: middle;"><Lock /></el-icon>
-                    </el-tag>
-                    <el-button 
-                      type="danger" 
-                      size="small" 
-                      text 
-                      circle
-                      class="tree-delete-btn"
+                  <!-- 分组图标 -->
+                  <span v-if="!data.isLeaf" class="node-icon node-icon--group">
+                    <el-icon><Folder /></el-icon>
+                  </span>
+                  <!-- 服务器图标 -->
+                  <span v-else class="node-icon node-icon--server">
+                    <el-icon><Monitor /></el-icon>
+                  </span>
+
+                  <div class="node-body">
+                    <span class="node-label">{{ node.label }}</span>
+                    <span v-if="data.isLeaf && data.record" class="node-host">
+                      {{ data.record.username }}@{{ data.record.host }}
+                    </span>
+                  </div>
+
+                  <div class="node-badges" v-if="data.isLeaf">
+                    <span v-if="data.record?.hasSavedCredential" class="badge-key" title="已保存凭据">
+                      <el-icon><Lock /></el-icon>
+                    </span>
+                    <button
+                      class="node-delete-btn"
                       @click.stop="removeHistoryByRecord(data.record)"
+                      title="删除"
                     >
                       <el-icon><Close /></el-icon>
-                    </el-button>
+                    </button>
                   </div>
                 </div>
               </template>
@@ -98,10 +107,14 @@
 
           <!-- 空状态 -->
           <div v-else class="history-empty">
-            <el-empty description="暂无连接历史" :image-size="64" />
+            <div class="empty-icon">
+              <el-icon><Monitor /></el-icon>
+            </div>
+            <p class="empty-title">暂无主机</p>
+            <p class="empty-desc">连接后自动保存到列表</p>
           </div>
 
-        </el-aside>
+        </aside>
 
         <!-- 右侧：连接表单 -->
         <el-main class="form-main">
@@ -295,7 +308,7 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Connection, Delete, Close, Monitor, Lock, Folder, Upload, Download, Search, Share, Key, Check, InfoFilled, CircleCloseFilled } from '@element-plus/icons-vue'
+import { ArrowLeft, Connection, Delete, Close, Monitor, Lock, Folder, Upload, Download, Search, Share, Key, Check, InfoFilled, CircleCloseFilled, CircleClose } from '@element-plus/icons-vue'
 import { useTerminalStore } from '@/stores/terminal'
 import { useThemeStore } from '@/stores/theme'
 import CryptoJS from 'crypto-js'
@@ -817,210 +830,469 @@ onMounted(() => {
   display: flex; /* Ensure the children (aside and main) flow correctly */
 }
 
-/* 左侧历史树 */
+/* 左侧主机列表 */
 .history-aside {
-  background: rgba(255, 255, 255, 0.72);
+  width: 260px;
+  flex-shrink: 0;
+  background: rgba(246, 246, 248, 0.96);
   backdrop-filter: saturate(180%) blur(20px);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
   border-right: 1px solid rgba(0, 0, 0, 0.08);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding: 8px 12px;
-  transition: all 0.3s ease;
+  transition: background 0.3s;
 }
 
 .dark-theme .history-aside {
-  background: rgba(28, 28, 30, 0.8);
-  backdrop-filter: saturate(180%) blur(20px);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(22, 22, 24, 0.96);
+  border-right-color: rgba(255, 255, 255, 0.07);
 }
 
+/* 标题栏 */
 .aside-header {
   display: flex;
-  justify-content: flex-start;
   align-items: center;
-  padding: 12px 6px 6px;
+  justify-content: space-between;
+  padding: 14px 12px 10px;
   flex-shrink: 0;
 }
 
-.dark-theme .aside-header {
-  border-bottom: none;
-}
-
-.history-search {
-  padding: 12px 4px 8px;
-}
-
-.history-search :deep(.el-input__wrapper) {
-  background-color: rgba(0, 0, 0, 0.04);
-  border-radius: 10px;
-  box-shadow: none !important;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  transition: all 0.2s ease;
-}
-
-.history-search :deep(.el-input__wrapper.is-focus) {
-  background-color: #ffffff;
-  border-color: #007AFF;
-  box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.1) !important;
-}
-
-.history-search :deep(.el-input__inner) {
-  color: #1c1c1e;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-}
-
 .aside-title {
-  font-size: 20px;
+  font-size: 16px;
   font-weight: 700;
   color: #1d1d1f;
-  letter-spacing: -0.8px;
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  letter-spacing: -0.4px;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
 }
 
 .dark-theme .aside-title {
   color: #f5f5f7;
 }
 
-.aside-actions {
+.aside-header-actions {
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 2px 6px 8px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
-  flex-shrink: 0;
 }
 
-.dark-theme .aside-actions {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.history-tree {
-  flex: 1;
-  overflow-y: auto;
-  padding: 8px 0;
-}
-
-.history-empty {
-  flex: 1;
+/* 图标按钮 */
+.icon-btn {
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
+  border: none;
+  background: transparent;
+  border-radius: 7px;
+  color: #636366;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  padding: 0;
 }
 
-.aside-tip {
+.icon-btn:hover {
+  background: rgba(0, 0, 0, 0.07);
+  color: #1c1c1e;
+}
+
+.icon-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.icon-btn--danger:hover {
+  background: rgba(255, 59, 48, 0.1);
+  color: #FF3B30;
+}
+
+.dark-theme .icon-btn {
+  color: #8e8e93;
+}
+
+.dark-theme .icon-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #f5f5f7;
+}
+
+.dark-theme .icon-btn--danger:hover {
+  background: rgba(255, 59, 48, 0.15);
+  color: #FF453A;
+}
+
+/* 搜索框 */
+.aside-search {
+  padding: 0 10px 8px;
   flex-shrink: 0;
-  padding: 12px;
-  border-top: 1px solid #f0f0f0;
 }
 
-/* 树节点样式 */
+.search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 9px;
+  padding: 0 10px;
+  height: 30px;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+
+.search-wrap:focus-within {
+  background: #ffffff;
+  box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.35);
+}
+
+.dark-theme .search-wrap {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.dark-theme .search-wrap:focus-within {
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.4);
+}
+
+.search-icon {
+  font-size: 13px;
+  color: #aeaeb2;
+  flex-shrink: 0;
+}
+
+.search-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 13px;
+  color: #1c1c1e;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  min-width: 0;
+}
+
+.search-input::placeholder {
+  color: #aeaeb2;
+}
+
+.dark-theme .search-input {
+  color: #f5f5f7;
+}
+
+.dark-theme .search-input::placeholder {
+  color: #636366;
+}
+
+.search-clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: #aeaeb2;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  transition: color 0.15s;
+}
+
+.search-clear:hover {
+  color: #636366;
+}
+
+/* 主机树容器 */
+.history-tree {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 6px 12px;
+}
+
+.history-tree::-webkit-scrollbar {
+  width: 4px;
+}
+
+.history-tree::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.12);
+  border-radius: 4px;
+}
+
+.dark-theme .history-tree::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* Element Tree 基础覆盖 */
+:deep(.el-tree) {
+  background: transparent;
+  --el-tree-node-hover-bg-color: transparent;
+}
+
+:deep(.el-tree-node__content) {
+  height: auto !important;
+  padding: 0 !important;
+  border-radius: 9px;
+  transition: background 0.15s !important;
+  margin-bottom: 1px;
+}
+
+:deep(.el-tree-node__content:hover) {
+  background: rgba(0, 0, 0, 0.05) !important;
+}
+
+.dark-theme :deep(.el-tree-node__content:hover) {
+  background: rgba(255, 255, 255, 0.07) !important;
+}
+
+:deep(.el-tree-node__expand-icon) {
+  color: #aeaeb2;
+  font-size: 12px;
+  padding: 0 2px 0 4px;
+}
+
+.dark-theme :deep(.el-tree-node__expand-icon) {
+  color: #636366;
+}
+
+/* 选中：叶节点 */
+:deep(.el-tree--highlight-current .el-tree-node.is-current > .el-tree-node__content:has(.is-leaf)) {
+  background: #007AFF !important;
+}
+
+:deep(.el-tree--highlight-current .el-tree-node.is-current > .el-tree-node__content:has(.is-leaf) .node-label),
+:deep(.el-tree--highlight-current .el-tree-node.is-current > .el-tree-node__content:has(.is-leaf) .node-host),
+:deep(.el-tree--highlight-current .el-tree-node.is-current > .el-tree-node__content:has(.is-leaf) .node-icon--server) {
+  color: #fff !important;
+}
+
+:deep(.el-tree--highlight-current .el-tree-node.is-current > .el-tree-node__content:has(.is-leaf) .badge-key) {
+  background: rgba(255,255,255,0.2);
+  color: #fff;
+}
+
+:deep(.el-tree--highlight-current .el-tree-node.is-current > .el-tree-node__content:has(.is-leaf) .node-delete-btn) {
+  color: rgba(255,255,255,0.7);
+}
+
+:deep(.el-tree--highlight-current .el-tree-node.is-current > .el-tree-node__content:has(.is-leaf) .node-delete-btn:hover) {
+  background: rgba(255,255,255,0.2);
+  color: #fff;
+}
+
+/* 选中：分组节点 */
+:deep(.el-tree--highlight-current .el-tree-node.is-current > .el-tree-node__content:not(:has(.is-leaf))) {
+  background: rgba(0, 0, 0, 0.06) !important;
+}
+
+.dark-theme :deep(.el-tree--highlight-current .el-tree-node.is-current > .el-tree-node__content:not(:has(.is-leaf))) {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* 树节点行 */
 .tree-node {
   display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 4px 6px;
-  font-size: 13px;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  padding: 6px 6px 6px 4px;
+  min-width: 0;
 }
 
-.tree-folder-icon {
-  color: #86868b;
-  font-size: 16px;
-  flex-shrink: 0;
+.tree-node.is-leaf {
+  padding: 5px 6px 5px 4px;
 }
 
-.tree-server-icon {
-  color: #007AFF;
-  font-size: 14px;
-  flex-shrink: 0;
-}
-
-.tree-node-label {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: #1d1d1f;
-  font-weight: 500;
-}
-
-.tree-node.is-leaf .tree-node-label {
-  color: #424245;
-  font-weight: 400;
-}
-
-.tree-node-actions {
+/* 图标容器 */
+.node-icon {
   display: flex;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
   flex-shrink: 0;
-  opacity: 0;
-  transition: opacity 0.2s;
+  font-size: 13px;
 }
 
-.tree-node:hover .tree-node-actions {
+.node-icon--group {
+  background: rgba(120, 120, 128, 0.12);
+  color: #636366;
+}
+
+.node-icon--server {
+  background: rgba(0, 122, 255, 0.12);
+  color: #007AFF;
+}
+
+.dark-theme .node-icon--group {
+  background: rgba(255, 255, 255, 0.1);
+  color: #8e8e93;
+}
+
+.dark-theme .node-icon--server {
+  background: rgba(0, 122, 255, 0.18);
+  color: #409CFF;
+}
+
+/* 文字区 */
+.node-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.node-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #1c1c1e;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+}
+
+.tree-node:not(.is-leaf) .node-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #636366;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.node-host {
+  font-size: 11px;
+  color: #aeaeb2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+  font-family: "SF Mono", "Monaco", Consolas, monospace;
+}
+
+.dark-theme .node-label {
+  color: #e5e5ea;
+}
+
+.dark-theme .tree-node:not(.is-leaf) .node-label {
+  color: #636366;
+}
+
+.dark-theme .node-host {
+  color: #636366;
+}
+
+/* 右侧徽章区 */
+.node-badges {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.tree-node:hover .node-badges {
   opacity: 1;
 }
 
-.tree-tag {
-  transform: scale(0.85);
+.badge-key {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background: rgba(52, 199, 89, 0.12);
+  color: #34C759;
+  font-size: 10px;
 }
 
-.tree-delete-btn {
-  width: 20px !important;
-  height: 20px !important;
-  background-color: transparent;
-  border-color: rgba(255, 255, 255, 0.4);
+.dark-theme .badge-key {
+  background: rgba(52, 199, 89, 0.15);
+  color: #30D158;
 }
 
-/* Element Tree 深度覆盖 */
-:deep(.el-tree) {
+.node-delete-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 5px;
   background: transparent;
+  color: #aeaeb2;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  padding: 0;
 }
 
-:deep(.el-tree-node__content) {
-  height: auto !important;
-  padding: 4px 6px !important;
-  margin-bottom: 2px !important;
-  border-radius: 8px;
-  transition: all 0.2s ease !important;
+.node-delete-btn:hover {
+  background: rgba(255, 59, 48, 0.1);
+  color: #FF3B30;
 }
 
-:deep(.el-tree-node__content:hover) {
-  background-color: rgba(0, 0, 0, 0.06) !important;
+.dark-theme .node-delete-btn {
+  color: #636366;
 }
 
-.dark-theme :deep(.el-tree-node__content:hover) {
-  background-color: rgba(255, 255, 255, 0.1) !important;
+.dark-theme .node-delete-btn:hover {
+  background: rgba(255, 69, 58, 0.15);
+  color: #FF453A;
 }
 
-/* Tree Selection Highlights - Leaf Nodes */
-:deep(.el-tree--highlight-current .el-tree-node.is-current > .el-tree-node__content:has(.is-leaf)) {
-  background-color: #007AFF !important;
-  color: white;
+/* 空状态 */
+.history-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding-bottom: 20px;
 }
 
-:deep(.el-tree--highlight-current .el-tree-node.is-current > .el-tree-node__content:has(.is-leaf) .tree-node-label),
-:deep(.el-tree--highlight-current .el-tree-node.is-current > .el-tree-node__content:has(.is-leaf) .tree-server-icon) {
-  color: white !important;
+.empty-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  color: #c7c7cc;
+  margin-bottom: 4px;
 }
 
-:deep(.el-tree--highlight-current .el-tree-node.is-current > .el-tree-node__content:has(.is-leaf) .tree-delete-btn:hover) {
-  background-color: rgba(255, 255, 255, 0.2);
-  color: white;
+.dark-theme .empty-icon {
+  background: rgba(255, 255, 255, 0.06);
+  color: #48484a;
 }
 
-/* Tree Selection Highlights - Group Nodes (Non-leaf) */
-:deep(.el-tree--highlight-current .el-tree-node.is-current > .el-tree-node__content:not(:has(.is-leaf))) {
-  background-color: rgba(255, 255, 255, 0.15) !important;
+.empty-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #3c3c43;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
 }
 
-.dark-theme :deep(.el-tree--highlight-current .el-tree-node.is-current > .el-tree-node__content:not(:has(.is-leaf))) {
-  background-color: rgba(255, 255, 255, 0.08) !important;
+.empty-desc {
+  margin: 0;
+  font-size: 12px;
+  color: #aeaeb2;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+}
+
+.dark-theme .empty-title {
+  color: #8e8e93;
+}
+
+.dark-theme .empty-desc {
+  color: #48484a;
 }
 
 /* 右侧表单 */
