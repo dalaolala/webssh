@@ -149,6 +149,7 @@ const handlePasteText = (text) => {
     })
   } else {
     emit('data', trimmed)
+    nextTick(() => focus())
   }
 }
 
@@ -158,10 +159,12 @@ const confirmPaste = () => {
     emit('data', text)
   }
   pasteDialog.value.visible = false
+  nextTick(() => focus())
 }
 
 const cancelPaste = () => {
   pasteDialog.value.visible = false
+  nextTick(() => focus())
 }
 // ---- End Paste Dialog ----
 
