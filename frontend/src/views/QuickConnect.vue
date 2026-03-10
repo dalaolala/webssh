@@ -328,6 +328,8 @@ const connecting = ref(false)
 const connectionError = ref('')
 const savePassword = ref(false)
 const historyList = ref([])
+const usingSavedCredential = ref(false) // 标记是否使用已保存的凭据
+const currentHistoryItem = ref(null) // 当前加载的历史记录项
 
 const searchKeyword = ref('')
 const historyTreeRef = ref()
@@ -495,9 +497,19 @@ const saveToHistory = () => {
 
   if (savePassword.value) {
     if (form.authType === 'password') {
-      record.password = form.password
+      // 如果是占位符，使用历史记录中的实际密码
+      if (usingSavedCredential.value && form.password === '********' && currentHistoryItem.value) {
+        record.password = currentHistoryItem.value.password
+      } else {
+        record.password = form.password
+      }
     } else {
-      record.privateKey = form.privateKey
+      // 如果是占位符，使用历史记录中的实际私钥
+      if (usingSavedCredential.value && form.privateKey.startsWith('********') && currentHistoryItem.value) {
+        record.privateKey = currentHistoryItem.value.privateKey
+      } else {
+        record.privateKey = form.privateKey
+      }
     }
   }
 
@@ -523,15 +535,22 @@ const fillFromHistory = (item) => {
 
   if (item.hasSavedCredential) {
     savePassword.value = true
+    usingSavedCredential.value = true
+    currentHistoryItem.value = item
+    
     if (item.authType === 'password') {
-      form.password = item.password || ''
+      // 密码认证：显示占位符
+      form.password = '********'
       form.privateKey = ''
     } else {
-      form.privateKey = item.privateKey || ''
+      // 私钥认证：显示占位符
+      form.privateKey = '******** (已保存的私钥，如需修改请清空后重新输入)'
       form.password = ''
     }
   } else {
     savePassword.value = false
+    usingSavedCredential.value = false
+    currentHistoryItem.value = null
     form.password = ''
     form.privateKey = ''
   }
@@ -757,26 +776,37 @@ const submitConnection = async (mode) => {
     const valid = await connectForm.value.validate()
     if (!valid) return
     
-
-
     connecting.value = true
     connectionError.value = ''
 
-    saveToHistory()
-    
+    // 准备连接信息
     const connectionInfo = {
       name: form.name || '',
       host: form.host,
       port: form.port,
       username: form.username,
-      mode: mode // Add mode to connectionInfo
+      mode: mode
     }
     
+    // 处理认证信息
     if (form.authType === 'password') {
-      connectionInfo.password = form.password
+      // 如果使用已保存的凭据且密码是占位符，从历史记录中获取实际密码
+      if (usingSavedCredential.value && form.password === '********' && currentHistoryItem.value) {
+        connectionInfo.password = currentHistoryItem.value.password
+      } else {
+        connectionInfo.password = form.password
+      }
     } else {
-      connectionInfo.privateKey = form.privateKey
+      // 如果使用已保存的凭据且私钥是占位符，从历史记录中获取实际私钥
+      if (usingSavedCredential.value && form.privateKey.startsWith('********') && currentHistoryItem.value) {
+        connectionInfo.privateKey = currentHistoryItem.value.privateKey
+      } else {
+        connectionInfo.privateKey = form.privateKey
+      }
     }
+    
+    // 保存到历史记录（使用实际的凭据）
+    saveToHistory()
     
     emit('connect', connectionInfo)
     
