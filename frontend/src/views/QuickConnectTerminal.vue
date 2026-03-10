@@ -61,7 +61,7 @@
             />
           </div>
           
-          <div v-else-if="!isConnected && !isConnecting" class="connection-prompt">
+          <div v-else-if="!isConnected && !isConnecting && !hasBeenConnected" class="connection-prompt">
             <div class="prompt-content">
               <el-icon size="48" color="#909399"><Monitor /></el-icon>
               <h3>准备连接</h3>
@@ -139,6 +139,7 @@ let pingInterval = null
 const isConnected = ref(false)
 const isConnecting = ref(false)
 const connectionError = ref(null)
+const hasBeenConnected = ref(false) // 标记是否曾经连接成功过
 
 // 连接显示信息
 const connectionDisplay = computed(() => {
@@ -223,6 +224,7 @@ const connectToServer = () => {
   socket.on('ssh-connected', () => {
     isConnected.value = true
     isConnecting.value = false
+    hasBeenConnected.value = true // 标记曾经连接成功过
     if (terminalRef.value) {
       terminalRef.value.clear()
       terminalRef.value.focus()
