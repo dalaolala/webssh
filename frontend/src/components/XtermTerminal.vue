@@ -226,7 +226,13 @@ const initTerminal = () => {
   fitAddon = new FitAddon()
   term.loadAddon(fitAddon)
   
-  const webLinksAddon = new WebLinksAddon()
+  // 禁用 WebLinksAddon 的默认链接打开行为，避免 Electron 提示"需要使用新应用打开此链接"
+  const webLinksAddon = new WebLinksAddon((event, uri) => {
+    // 空函数阻止默认行为，链接点击不做任何处理
+    event.preventDefault()
+    event.stopPropagation()
+    return false
+  })
   term.loadAddon(webLinksAddon)
   
   if (terminalRef.value) {
