@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, shell, ipcMain } = require('electron');
+const { app, BrowserWindow, Menu, shell, ipcMain, dialog } = require('electron');
 const path = require('path');
 const net = require('net');
 
@@ -6,6 +6,21 @@ let mainWindow;
 const DEFAULT_PORT = 3000;
 let backendServer = null;
 let currentBackendPort = null;
+
+// 单实例锁
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  // 已有实例在运行，退出当前实例
+  // 注意：不能在这里直接调用 dialog，因为 app 可能还未准备好
+  console.log('WebSSH 应用已在运行中，退出当前实例...');
+  
+  // 使用延迟退出，确保应用完全退出
+  process.nextTick(() => {
+    app.quit();
+    process.exit(0);
+  });
+}
 
 function isPortInUse(port) {
   return new Promise((resolve) => {
@@ -17,6 +32,29 @@ function isPortInUse(port) {
     });
     server.listen(port);
   });
+}
+
+// 检查应用是否已在运行（端口检测作为后备）
+async function isAppAlreadyRunning() {
+  // 检查默认端口是否被占用
+  const defaultPortInUse = await isPortInUse(DEFAULT_PORT);
+  if (defaultPortInUse) {
+    // 检查是否是WebSSH后端（发送HTTP请求验证）
+    try {
+      const response = await new Promise((resolve) => {
+        const http = require('http');
+        const req = http.get(`http://localhost:${DEFAULT_PORT}/api/crypto/public-key`, (res) => {
+          resolve(res.statusCode === 200);
+        });
+        req.on('error', () => resolve(false));
+        req.setTimeout(1000, () => resolve(false));
+      });
+      return response;
+    } catch (error) {
+      return false;
+    }
+  }
+  return false;
 }
 
 function getAvailablePort(startPort = DEFAULT_PORT, maxPort = 3100) {
@@ -195,7 +233,44 @@ ipcMain.handle('get-backend-port', () => {
   return currentBackendPort || DEFAULT_PORT;
 });
 
-app.whenReady().then(() => {
+// 当第二个实例启动时，激活已有窗口
+app.on('second-instance', (event, commandLine, workingDirectory) => {
+  // 有人尝试运行第二个实例，我们应该聚焦到已有窗口
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+    mainWindow.focus();
+  }
+});
+
+app.whenReady().then(async () => {
+  // 如果单实例锁获取失败，显示对话框并退出
+  if (!gotTheLock) {
+    dialog.showMessageBoxSync({
+      type: 'info',
+      title: 'WebSSH',
+      message: 'WebSSH 应用已在运行中，请勿重复启动。',
+      detail: '如果您需要启动新窗口，请在已运行的实例中打开新标签页。'
+    });
+    app.quit();
+    return;
+  }
+  
+  // 额外检查应用是否已在运行
+  const alreadyRunning = await isAppAlreadyRunning();
+  if (alreadyRunning) {
+    // 双重确认，如果检测到应用在运行，仍然退出
+    dialog.showMessageBoxSync({
+      type: 'info',
+      title: 'WebSSH',
+      message: '检测到 WebSSH 应用已在运行中，请勿重复启动。',
+      detail: '如果您需要启动新窗口，请在已运行的实例中打开新标签页。'
+    });
+    app.quit();
+    return;
+  }
+  
   createWindow();
 });
 

@@ -493,7 +493,13 @@ const selectAllFromContextMenu = () => {
 }
 
 const clearTerminal = () => {
-  reset()
+  if (props.isConnected) {
+    // 如果连接状态，发送 clear 命令到后端
+    emit('data', 'clear\n')
+  } else {
+    // 如果未连接状态，本地清屏
+    clear()
+  }
   hideContextMenu()
 }
 
