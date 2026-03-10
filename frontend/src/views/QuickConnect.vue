@@ -114,6 +114,9 @@
             <p class="empty-desc">连接后自动保存到列表</p>
           </div>
 
+          <!-- GitHub 弹出卡片 -->
+          <GithubCard />
+
         </aside>
 
         <!-- 右侧：连接表单 -->
@@ -313,6 +316,7 @@ import { useTerminalStore } from '@/stores/terminal'
 import { useThemeStore } from '@/stores/theme'
 import CryptoJS from 'crypto-js'
 import WebdavSync from '@/components/WebdavSync.vue'
+import GithubCard from '@/components/GithubCard.vue'
 
 const HISTORY_KEY = 'webssh_quick_connect_history'
 

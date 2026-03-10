@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu } = require('electron');
+const { app, BrowserWindow, Menu, shell } = require('electron');
 const path = require('path');
 const net = require('net');
 
@@ -126,6 +126,21 @@ function createWindow() {
     // 关闭窗口时关闭后端服务器
     if (backendServer && backendServer.httpServer) {
       backendServer.httpServer.close();
+    }
+  });
+
+  // 拦截所有非 localhost 的导航和新窗口，用系统浏览器打开
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (!url.startsWith(`http://localhost`) && !url.startsWith(`https://localhost`)) {
+      shell.openExternal(url);
+    }
+    return { action: 'deny' };
+  });
+
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (!url.startsWith(`http://localhost`) && !url.startsWith(`https://localhost`)) {
+      event.preventDefault();
+      shell.openExternal(url);
     }
   });
 }
