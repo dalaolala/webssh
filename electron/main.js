@@ -1,10 +1,11 @@
-const { app, BrowserWindow, Menu, shell } = require('electron');
+const { app, BrowserWindow, Menu, shell, ipcMain } = require('electron');
 const path = require('path');
 const net = require('net');
 
 let mainWindow;
-const PORT = 3000;
+const DEFAULT_PORT = 3000;
 let backendServer = null;
+let currentBackendPort = null;
 
 function isPortInUse(port) {
   return new Promise((resolve) => {
@@ -18,7 +19,35 @@ function isPortInUse(port) {
   });
 }
 
-function startBackend() {
+function getAvailablePort(startPort = DEFAULT_PORT, maxPort = 3100) {
+  return new Promise((resolve) => {
+    const tryPort = (port) => {
+      if (port > maxPort) {
+        resolve(null); // 没有找到可用端口
+        return;
+      }
+      
+      const server = net.createServer();
+      server.once('error', () => {
+        // 端口被占用，尝试下一个端口
+        server.close();
+        tryPort(port + 1);
+      });
+      
+      server.once('listening', () => {
+        // 端口可用
+        server.close();
+        resolve(port);
+      });
+      
+      server.listen(port);
+    };
+    
+    tryPort(startPort);
+  });
+}
+
+function startBackend(port = 3000) {
   const express = require('express');
   const { createServer } = require('http');
   const { Server } = require('socket.io');
@@ -85,9 +114,10 @@ function startBackend() {
   console.log('WebSSH快速连接服务器已启动');
 
   return new Promise((resolve) => {
-    httpServer.listen(PORT, () => {
-      console.log(`WebSSH server running on port ${PORT}`);
-      resolve({ app, httpServer, io });
+    httpServer.listen(port, () => {
+      console.log(`WebSSH server running on port ${port}`);
+      currentBackendPort = port; // 保存当前端口
+      resolve({ app, httpServer, io, port });
     });
   });
 }
@@ -106,20 +136,35 @@ function createWindow() {
   // 隐藏菜单栏
   Menu.setApplicationMenu(null);
 
-  // 检查端口是否被占用
-  isPortInUse(PORT).then(async (inUse) => {
-    if (!inUse) {
+  // 检查端口是否被占用，并自动选择可用端口
+  getAvailablePort().then(async (availablePort) => {
+    if (availablePort) {
       // 启动后端服务器
       console.log('正在启动后端服务器...');
-      backendServer = await startBackend();
+      backendServer = await startBackend(availablePort);
 
       // 等待后端完全启动
       await new Promise(resolve => setTimeout(resolve, 2000));
-    }
 
-    // 加载前端应用
-    console.log('正在加载前端应用...');
-    mainWindow.loadURL(`http://localhost:${PORT}`);
+      // 加载前端应用
+      console.log('正在加载前端应用...');
+      mainWindow.loadURL(`http://localhost:${availablePort}`);
+    } else {
+      // 没有找到可用端口，显示错误信息
+      console.error('错误：没有找到可用的端口 (3000-3100)');
+      const errorHtml = `
+        <html>
+          <head><title>端口错误</title></head>
+          <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+            <h1 style="color: #f56c6c;">启动失败</h1>
+            <p>无法启动 WebSSH 应用，端口 3000-3100 都被占用。</p>
+            <p>请关闭占用这些端口的应用程序后重试。</p>
+            <button onclick="window.close()" style="padding: 10px 20px; background: #f56c6c; color: white; border: none; border-radius: 4px; cursor: pointer;">关闭</button>
+          </body>
+        </html>
+      `;
+      mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(errorHtml)}`);
+    }
   });
 
   mainWindow.on('closed', () => {
@@ -144,6 +189,11 @@ function createWindow() {
     }
   });
 }
+
+// IPC 处理程序
+ipcMain.handle('get-backend-port', () => {
+  return currentBackendPort || DEFAULT_PORT;
+});
 
 app.whenReady().then(() => {
   createWindow();
