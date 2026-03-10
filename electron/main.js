@@ -1,4 +1,4 @@
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, Menu } = require('electron');
 const path = require('path');
 const net = require('net');
 
@@ -102,6 +102,9 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js')
     }
   });
+
+  // 隐藏菜单栏
+  Menu.setApplicationMenu(null);
 
   // 检查端口是否被占用
   isPortInUse(PORT).then(async (inUse) => {
