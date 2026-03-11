@@ -319,6 +319,7 @@ import WebdavSync from '@/components/WebdavSync.vue'
 import GithubCard from '@/components/GithubCard.vue'
 
 const HISTORY_KEY = 'webssh_quick_connect_history'
+const MAX_HISTORY_ITEMS = 100 // 最多保存100条历史记录
 
 const router = useRouter()
 const themeStore = useThemeStore()
@@ -525,6 +526,11 @@ const saveToHistory = () => {
   }
 
   historyList.value.unshift(record)
+
+  // 限制历史记录数量，防止无限增长
+  if (historyList.value.length > MAX_HISTORY_ITEMS) {
+    historyList.value = historyList.value.slice(0, MAX_HISTORY_ITEMS)
+  }
 
   persistHistory()
 }

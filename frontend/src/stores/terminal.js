@@ -51,6 +51,15 @@ export const useTerminalStore = defineStore('terminal', () => {
     })
   }
 
+  // 存储事件处理器引用，便于清理
+  const eventHandlers = {
+    sshConnected: null,
+    sshData: null,
+    sshError: null,
+    sshClosed: null,
+    disconnect: null
+  }
+
   // 监听Socket事件（在Socket连接建立后设置）
   const setupSocketListeners = () => {
     if (!socket.value || socket.value._listenersSetup) return
@@ -58,45 +67,88 @@ export const useTerminalStore = defineStore('terminal', () => {
     // 标记已设置监听器，避免重复设置
     socket.value._listenersSetup = true
 
-    socket.value.on('ssh-connected', () => {
+    // 创建事件处理器
+    eventHandlers.sshConnected = () => {
       isConnected.value = true
       isConnecting.value = false
       connectionError.value = null
       console.log('SSH连接成功')
-    })
+    }
 
-    socket.value.on('ssh-data', (data) => {
+    eventHandlers.sshData = (data) => {
       // 确保数据是字符串格式
       const output = typeof data === 'string' ? data : String(data)
       terminalOutput.value += output
-      
+
       // 限制输出长度，防止内存溢出
       if (terminalOutput.value.length > 50000) {
         terminalOutput.value = terminalOutput.value.slice(-25000)
       }
-    })
+    }
 
-    socket.value.on('ssh-error', (data) => {
+    eventHandlers.sshError = (data) => {
       isConnecting.value = false
       isConnected.value = false
       connectionError.value = data.error
       console.error('SSH连接错误:', data.error)
-    })
+    }
 
-    socket.value.on('ssh-closed', () => {
+    eventHandlers.sshClosed = () => {
       isConnected.value = false
       isConnecting.value = false
       currentConnection.value = null
       console.log('SSH连接已关闭')
-    })
+    }
 
-    socket.value.on('disconnect', () => {
+    eventHandlers.disconnect = () => {
       isConnected.value = false
       isConnecting.value = false
       console.log('Socket连接断开')
       // 清除监听器标记
+      if (socket.value) {
+        socket.value._listenersSetup = false
+      }
+    }
+
+    // 注册事件监听器
+    socket.value.on('ssh-connected', eventHandlers.sshConnected)
+    socket.value.on('ssh-data', eventHandlers.sshData)
+    socket.value.on('ssh-error', eventHandlers.sshError)
+    socket.value.on('ssh-closed', eventHandlers.sshClosed)
+    socket.value.on('disconnect', eventHandlers.disconnect)
+  }
+
+  // 移除所有事件监听器
+  const removeSocketListeners = () => {
+    if (!socket.value) return
+
+    if (eventHandlers.sshConnected) {
+      socket.value.off('ssh-connected', eventHandlers.sshConnected)
+    }
+    if (eventHandlers.sshData) {
+      socket.value.off('ssh-data', eventHandlers.sshData)
+    }
+    if (eventHandlers.sshError) {
+      socket.value.off('ssh-error', eventHandlers.sshError)
+    }
+    if (eventHandlers.sshClosed) {
+      socket.value.off('ssh-closed', eventHandlers.sshClosed)
+    }
+    if (eventHandlers.disconnect) {
+      socket.value.off('disconnect', eventHandlers.disconnect)
+    }
+
+    // 清空处理器引用
+    eventHandlers.sshConnected = null
+    eventHandlers.sshData = null
+    eventHandlers.sshError = null
+    eventHandlers.sshClosed = null
+    eventHandlers.disconnect = null
+
+    // 清除标记
+    if (socket.value) {
       socket.value._listenersSetup = false
-    })
+    }
   }
 
   // 连接到SSH服务器
@@ -169,10 +221,13 @@ export const useTerminalStore = defineStore('terminal', () => {
   // 断开Socket连接
   const disconnectSocket = () => {
     if (socket.value) {
+      // 先移除所有事件监听器
+      removeSocketListeners()
+      // 断开连接
       socket.value.disconnect()
       socket.value = null
     }
-    
+
     isConnected.value = false
     isConnecting.value = false
     currentConnection.value = null

@@ -3,6 +3,21 @@ const { Client } = require('ssh2');
 // 存储活跃的SSH连接
 const activeConnections = new Map();
 
+// 清理连接的辅助函数
+const cleanupConnection = (socketId) => {
+  const connection = activeConnections.get(socketId);
+  if (connection) {
+    try {
+      if (connection.conn) {
+        connection.conn.end();
+      }
+    } catch (error) {
+      console.error('清理连接时出错:', error);
+    }
+    activeConnections.delete(socketId);
+  }
+};
+
 const socketHandler = (io) => {
   io.on('connection', (socket) => {
     console.log('快速连接用户连接:', socket.id);
@@ -92,21 +107,19 @@ const socketHandler = (io) => {
 
     // 断开SSH连接
     socket.on('disconnect-ssh', () => {
-      const connection = activeConnections.get(socket.id);
-      if (connection) {
-        connection.conn.end();
-        activeConnections.delete(socket.id);
-      }
+      cleanupConnection(socket.id);
     });
 
     // 处理连接断开
     socket.on('disconnect', () => {
       console.log('用户断开连接:', socket.id);
-      const connection = activeConnections.get(socket.id);
-      if (connection) {
-        connection.conn.end();
-        activeConnections.delete(socket.id);
-      }
+      cleanupConnection(socket.id);
+    });
+
+    // 处理错误
+    socket.on('error', (error) => {
+      console.error('Socket错误:', socket.id, error);
+      cleanupConnection(socket.id);
     });
 
     // 心跳检测

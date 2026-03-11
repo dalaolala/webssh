@@ -37,10 +37,15 @@ class SftpHandler {
 
   async disconnect() {
     if (this.sshClient) {
-      this.sshClient.end();
+      try {
+        this.sshClient.end()
+      } catch (error) {
+        console.error('断开SFTP连接时出错:', error)
+      }
     }
-    this.isConnected = false;
-    this.sftp = null;
+    this.isConnected = false
+    this.sftp = null
+    this.sshClient = null
   }
 
   async listDirectory(directory = '.') {

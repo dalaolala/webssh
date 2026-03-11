@@ -109,6 +109,8 @@ let isComposing = false
 let wheelHandler = null
 let viewportWheelHandler = null
 let initialScrollTop = 0
+let mutationObserver = null
+let wheelObserver = null
 
 // Context Menu State
 const contextMenu = ref({
@@ -242,14 +244,14 @@ const initTerminal = () => {
     
     // IME Fix for composing
     setupHelperTextarea()
-    const observer = new MutationObserver((mutations) => {
+    mutationObserver = new MutationObserver((mutations) => {
       mutations.forEach((mutation) => {
         if (mutation.type === 'childList') {
           setupHelperTextarea()
         }
       })
     })
-    observer.observe(terminalRef.value, { childList: true, subtree: true })
+    mutationObserver.observe(terminalRef.value, { childList: true, subtree: true })
     
     // Terminal input handler
     term.onData((data) => {
@@ -264,7 +266,7 @@ const initTerminal = () => {
     
     // Optimize wheel scroll
     enableWheelScroll()
-    const wheelObserver = new MutationObserver(() => enableWheelScroll())
+    wheelObserver = new MutationObserver(() => enableWheelScroll())
     wheelObserver.observe(terminalRef.value, { childList: true, subtree: true })
     
     wheelHandler = (e) => {
@@ -548,10 +550,28 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  // 断开所有 MutationObserver
+  if (mutationObserver) {
+    mutationObserver.disconnect()
+    mutationObserver = null
+  }
+  if (wheelObserver) {
+    wheelObserver.disconnect()
+    wheelObserver = null
+  }
+  
+  // 清理终端实例
   if (term) {
     term.dispose()
     term = null
   }
+  
+  // 清理 FitAddon
+  if (fitAddon) {
+    fitAddon = null
+  }
+  
+  // 移除事件监听器
   if (terminalRef.value && wheelHandler) {
     terminalRef.value.removeEventListener('wheel', wheelHandler)
     wheelHandler = null
