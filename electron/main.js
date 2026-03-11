@@ -162,8 +162,12 @@ function startBackend(port = 3000) {
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1400,
-    height: 900,
+    width: 1200,
+    height: 800,
+    minWidth: 1000,
+    minHeight: 700,
+    center: true,
+    resizable: true,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
