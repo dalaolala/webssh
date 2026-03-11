@@ -15,6 +15,15 @@
       @mouseleave="hideContextMenu"
     >
       <div 
+        v-if="!isConnected && props.onReconnect" 
+        class="menu-item" 
+        @click="reconnectFromContextMenu"
+      >
+        <el-icon><Refresh /></el-icon>
+        <span>重连</span>
+      </div>
+      <div v-if="!isConnected && props.onReconnect" class="menu-divider"></div>
+      <div 
         class="menu-item" 
         @click="copyFromContextMenu"
         :class="{ disabled: !localHasSelection }"
@@ -89,7 +98,7 @@ import { Terminal } from 'xterm'
 import { FitAddon } from 'xterm-addon-fit'
 import { WebLinksAddon } from 'xterm-addon-web-links'
 import 'xterm/css/xterm.css'
-import { DocumentCopy, DocumentAdd, Select, Delete, Warning, Promotion } from '@element-plus/icons-vue'
+import { DocumentCopy, DocumentAdd, Select, Delete, Warning, Promotion, Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useTerminalThemeStore } from '@/stores/terminalTheme'
 
@@ -97,6 +106,10 @@ const props = defineProps({
   isConnected: {
     type: Boolean,
     default: false
+  },
+  onReconnect: {
+    type: Function,
+    default: null
   }
 })
 
@@ -490,6 +503,13 @@ const clearTerminal = () => {
   } else {
     // 如果未连接状态，本地清屏
     clear()
+  }
+  hideContextMenu()
+}
+
+const reconnectFromContextMenu = () => {
+  if (props.onReconnect) {
+    props.onReconnect()
   }
   hideContextMenu()
 }

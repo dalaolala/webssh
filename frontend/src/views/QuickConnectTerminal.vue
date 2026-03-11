@@ -40,6 +40,7 @@
           <XtermTerminal 
             ref="terminalRef" 
             :is-connected="isConnected"
+            :on-reconnect="reconnect"
             @data="handleTerminalData"
             @resize="handleTerminalResize"
             @selection-change="hasSelection = $event"
@@ -279,6 +280,32 @@ const handleResize = () => {
   if (terminalRef.value) {
     terminalRef.value.fit()
   }
+}
+
+// 重连功能
+const reconnect = () => {
+  if (isConnecting.value) {
+    ElMessage.info('正在连接中，请稍候...')
+    return
+  }
+  
+  // 清理之前的连接
+  if (socket) {
+    socket.disconnect()
+    socket = null
+  }
+  
+  // 重置状态
+  isConnected.value = false
+  connectionError.value = null
+  
+  // 显示连接提示
+  if (terminalRef.value) {
+    terminalRef.value.writeWarning('正在尝试重新连接...')
+  }
+  
+  // 重新连接
+  connectToServer()
 }
 
 onMounted(async () => {
