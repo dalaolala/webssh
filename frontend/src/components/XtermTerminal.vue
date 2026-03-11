@@ -84,13 +84,14 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { Terminal } from 'xterm'
 import { FitAddon } from 'xterm-addon-fit'
 import { WebLinksAddon } from 'xterm-addon-web-links'
 import 'xterm/css/xterm.css'
 import { DocumentCopy, DocumentAdd, Select, Delete, Warning, Promotion } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { useTerminalThemeStore } from '@/stores/terminalTheme'
 
 const props = defineProps({
   isConnected: {
@@ -102,6 +103,7 @@ const props = defineProps({
 const emit = defineEmits(['data', 'resize', 'selection-change'])
 
 const terminalRef = ref(null)
+const terminalThemeStore = useTerminalThemeStore()
 
 let term = null
 let fitAddon = null
@@ -174,35 +176,13 @@ const cancelPaste = () => {
 const initTerminal = () => {
   term = new Terminal({
     cursorBlink: true,
-    fontSize: 14,
+    fontSize: terminalThemeStore.fontSize,
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Courier New', monospace",
     fontWeight: '400',
     fontWeightBold: '600',
     letterSpacing: 0,
     lineHeight: 1.15,
-    theme: {
-      background: '#1c1c1e',
-      foreground: '#f5f5f5',
-      cursor: '#a3a3a6', // Soft cursor
-      cursorAccent: '#1c1c1e',
-      selectionBackground: 'rgba(255, 255, 255, 0.25)', // Mac style subtle white selection
-      black: '#000000',
-      red: '#ff3b30',    // Apple Red
-      green: '#34c759',  // Apple Green
-      yellow: '#ffcc00', // Apple Yellow
-      blue: '#0a84ff',   // Apple Blue
-      magenta: '#ff375f',// Apple Magenta/Pink
-      cyan: '#5ac8fa',   // Apple Cyan
-      white: '#ffffff',
-      brightBlack: '#686868',
-      brightRed: '#ff6961',
-      brightGreen: '#30d158',
-      brightYellow: '#ffd60a',
-      brightBlue: '#409cff',
-      brightMagenta: '#ff6482',
-      brightCyan: '#64d2ff',
-      brightWhite: '#ffffff',
-    },
+    theme: terminalThemeStore.currentTheme.theme,
     disableStdin: false,
     scrollback: 10000,
     convertEol: true,
@@ -277,11 +257,11 @@ const initTerminal = () => {
       }
     }
     terminalRef.value.addEventListener('wheel', wheelHandler, { passive: false })
-    
+
     // Custom key handlers
     term.attachCustomKeyEventHandler((event) => {
       // Prevent browser default on Ctrl+ keys except common text manipulation
-      if ((event.ctrlKey || event.metaKey) && 
+      if ((event.ctrlKey || event.metaKey) &&
           !['c', 'v', 'a', 'z', 'x', 'y'].includes(event.key.toLowerCase())) {
         event.preventDefault()
       }
@@ -542,6 +522,23 @@ defineExpose({
   fit
 })
 
+// 监听配色方案变化（放在组件级别）
+watch(() => terminalThemeStore.currentTheme.theme, (newTheme) => {
+  if (term) {
+    term.options.theme = newTheme
+    // 强制刷新终端显示
+    term.refresh(0, term.rows - 1)
+  }
+}, { deep: true })
+
+// 监听字体大小变化（放在组件级别）
+watch(() => terminalThemeStore.fontSize, (newSize) => {
+  if (term) {
+    term.options.fontSize = newSize
+    nextTick(() => handleResize())
+  }
+})
+
 onMounted(async () => {
   await nextTick()
   initTerminal()
@@ -591,7 +588,7 @@ onUnmounted(() => {
 .xterm-terminal-container {
   flex: 1;
   width: 100%;
-  padding: 8px 12px; /* Apple-style internal padding for the terminal component */
+  padding: 8px 12px;
   padding-bottom: 12px;
   cursor: text;
   overflow: hidden;
@@ -600,7 +597,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  background-color: #1c1c1e; /* Apple Dark Mode Background */
+  background-color: transparent;
 }
 
 .xterm-inner-container {
@@ -771,7 +768,6 @@ onUnmounted(() => {
 }
 
 :deep(.xterm-rows), :deep(.xterm-row) {
-  color: #f5f5f5 !important;
   background-color: transparent !important;
 }
 

@@ -1,6 +1,6 @@
 <template>
-  <div class="terminal-page">
-    <el-container class="terminal-container">
+  <div class="terminal-page" :style="{ backgroundColor: terminalThemeStore.currentTheme.theme.background }">
+    <el-container class="terminal-container" :style="{ backgroundColor: terminalThemeStore.currentTheme.theme.background }">
       <!-- 主内容区域 -->
       <el-container class="main-content">
         <!-- SFTP文件管理器侧边栏 -->
@@ -98,6 +98,9 @@ import TerminalStatusBar from '@/components/TerminalStatusBar.vue'
 import XtermTerminal from '@/components/XtermTerminal.vue'
 import ConnectingOverlay from '@/components/ConnectingOverlay.vue'
 import { io } from 'socket.io-client'
+import { useTerminalThemeStore } from '@/stores/terminalTheme'
+
+const terminalThemeStore = useTerminalThemeStore()
 
 const props = defineProps({
   tabId: {
@@ -309,16 +312,16 @@ onUnmounted(() => {
 .terminal-page {
   height: 100%;
   overflow: hidden;
-  background-color: #1c1c1e;
   display: flex;
   flex-direction: column;
+  transition: background-color 0.3s ease;
 }
 
 .terminal-container {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background-color: #1c1c1e;
+  transition: background-color 0.3s ease;
 }
 
 .terminal-header {

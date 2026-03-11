@@ -15,8 +15,11 @@
 
       <!-- Actions (Now placed after host info) -->
       <div class="status-actions">
-        <div 
-          class="action-item" 
+        <!-- 终端主题选择器 -->
+        <TerminalThemeSelector />
+        
+        <div
+          class="action-item"
           :class="{ active: showSftp }"
           @click="$emit('toggle-sftp')"
           title="文件管理器"
@@ -24,8 +27,8 @@
           <el-icon><Folder /></el-icon>
           <span>文件管理</span>
         </div>
-        <div 
-          class="action-item" 
+        <div
+          class="action-item"
           @click="$emit('show-commands')"
           title="常用命令库"
         >
@@ -42,6 +45,7 @@
 
 <script setup>
 import { Connection, Monitor, Folder, Tickets } from '@element-plus/icons-vue'
+import TerminalThemeSelector from './TerminalThemeSelector.vue'
 
 defineProps({
   isConnected: {
