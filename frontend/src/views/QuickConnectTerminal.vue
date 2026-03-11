@@ -137,6 +137,7 @@ const injectCommand = (cmd) => {
 
 let socket = null
 let pingInterval = null
+let resizeTimer = null   // 用于 clearTimeout 防止组件卸载后仍执行
 
 // 本地连接状态
 const isConnected = ref(false)
@@ -185,7 +186,8 @@ const focusTerminal = () => {
 const toggleSftpPanel = () => {
   showSftp.value = !showSftp.value
   
-  setTimeout(() => {
+  clearTimeout(resizeTimer)
+  resizeTimer = setTimeout(() => {
     handleResize()
   }, 100)
 }
@@ -231,7 +233,8 @@ const connectToServer = () => {
     if (terminalRef.value) {
       terminalRef.value.clear()
       terminalRef.value.focus()
-      setTimeout(() => {
+      clearTimeout(resizeTimer)
+      resizeTimer = setTimeout(() => {
         handleResize()
       }, 200)
     }
@@ -293,6 +296,9 @@ onUnmounted(() => {
   if (pingInterval) {
     clearInterval(pingInterval)
   }
+
+  clearTimeout(resizeTimer)
+  resizeTimer = null
   
   // 销毁组件内部的 Socket 连接
   if (socket) {

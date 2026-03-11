@@ -39,7 +39,12 @@
 
     <!-- 子页面内容 -->
     <div class="layout-content" :class="{ 'dark-theme': isDark }">
-      <div v-for="tab in tabs" :key="tab.id" v-show="activeTabId === tab.id" class="tab-content-wrapper">
+      <div 
+        v-for="tab in tabs" 
+        :key="tab.id" 
+        v-show="activeTabId === tab.id" 
+        class="tab-content-wrapper"
+      >
         <QuickConnect 
           v-if="tab.type === 'form'" 
           @connect="handleConnect(tab.id, $event)" 

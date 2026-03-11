@@ -27,6 +27,13 @@ const socketHandler = (io) => {
 
     // 快速连接（不保存服务器信息）
     socket.on('quick-connect', (connectionInfo) => {
+      // 如果已有旧连接，先清理（防止重连时监听器叠加）
+      cleanupConnection(socket.id);
+
+      // 移除可能残留的旧 ssh-input / resize 监听器
+      socket.removeAllListeners('ssh-input');
+      socket.removeAllListeners('resize');
+
       const { host, port, username, password, privateKey } = connectionInfo;
 
       const conn = new Client();
@@ -63,6 +70,9 @@ const socketHandler = (io) => {
           stream.on('close', () => {
             socket.emit('ssh-closed');
             activeConnections.delete(socket.id);
+            // 清理绑定在当前 stream 上的输入监听器
+            socket.removeAllListeners('ssh-input');
+            socket.removeAllListeners('resize');
           });
 
           socket.sshStream = stream;

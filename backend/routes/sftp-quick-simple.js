@@ -29,7 +29,7 @@ const upload = multer({
 });
 
 // 存储活跃的SFTP连接
-// Key: sessionId -> Value: SftpHandler 实例
+// Key: sessionId -> Value: { handler: SftpHandler, timer: TimeoutId }
 const sftpConnections = new Map();
 
 // 连接SFTP - 快速连接专属（无认证版本）
@@ -72,15 +72,17 @@ router.post('/connect', async (req, res) => {
 
         // 生成隔离的 sessionId
         const sessionId = crypto.randomUUID();
-        sftpConnections.set(sessionId, sftpHandler);
 
-        // 设置定时器自动断开连接（10分钟无活动）
-        setTimeout(() => {
-            if (sftpConnections.has(sessionId)) {
-                sftpConnections.get(sessionId).disconnect();
+        // 设置定时器自动断开连接（10分钟无活动），保存引用以便提前取消
+        const timer = setTimeout(() => {
+            const entry = sftpConnections.get(sessionId);
+            if (entry) {
+                entry.handler.disconnect();
                 sftpConnections.delete(sessionId);
             }
         }, 10 * 60 * 1000);
+
+        sftpConnections.set(sessionId, { handler: sftpHandler, timer });
 
         // 获取根目录列表
         const files = await sftpHandler.listDirectory('.');
@@ -111,8 +113,10 @@ function getQuickSftpConnection(sessionId) {
         throw new Error('SFTP会话已过期或不存在，请重新连接');
     }
 
-    const connection = sftpConnections.get(sessionId);
+    const entry = sftpConnections.get(sessionId);
+    const connection = entry.handler;
     if (!connection || !connection.isConnected) {
+        clearTimeout(entry.timer);
         sftpConnections.delete(sessionId);
         throw new Error('SFTP连接已断开，请重新连接');
     }
@@ -126,7 +130,9 @@ router.post('/disconnect', async (req, res) => {
         const { sessionId } = req.body;
 
         if (sessionId && sftpConnections.has(sessionId)) {
-            await sftpConnections.get(sessionId).disconnect();
+            const entry = sftpConnections.get(sessionId);
+            clearTimeout(entry.timer);
+            await entry.handler.disconnect();
             sftpConnections.delete(sessionId);
         }
 

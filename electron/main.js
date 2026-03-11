@@ -210,9 +210,19 @@ function createWindow() {
   });
 
   mainWindow.on('closed', () => {
-    // 关闭窗口时关闭后端服务器
-    if (backendServer && backendServer.httpServer) {
-      backendServer.httpServer.close();
+    // 关闭窗口时关闭后端服务器，并强制销毁所有活跃连接
+    if (backendServer) {
+      const { httpServer, io } = backendServer;
+
+      // 强制断开所有 Socket.IO 客户端（SSH 连接随之关闭）
+      if (io) {
+        io.disconnectSockets(true);
+      }
+
+      // 关闭 HTTP 服务器，停止接受新连接
+      if (httpServer) {
+        httpServer.close();
+      }
     }
   });
 
@@ -291,7 +301,13 @@ app.on('activate', () => {
 });
 
 app.on('before-quit', () => {
-  if (backendServer && backendServer.httpServer) {
-    backendServer.httpServer.close();
+  if (backendServer) {
+    const { httpServer, io } = backendServer;
+    if (io) {
+      io.disconnectSockets(true);
+    }
+    if (httpServer) {
+      httpServer.close();
+    }
   }
 });

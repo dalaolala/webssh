@@ -113,6 +113,9 @@ let viewportWheelHandler = null
 let initialScrollTop = 0
 let mutationObserver = null
 let wheelObserver = null
+// IME textarea 事件处理器引用，用于 onUnmounted 时移除
+let imeTextarea = null
+let imeHandlers = null
 
 // Context Menu State
 const contextMenu = ref({
@@ -184,7 +187,7 @@ const initTerminal = () => {
     lineHeight: 1.15,
     theme: terminalThemeStore.currentTheme.theme,
     disableStdin: false,
-    scrollback: 10000,
+    scrollback: 3000,
     convertEol: true,
     allowTransparency: false,
     tabStopWidth: 8,
@@ -311,6 +314,7 @@ const setupHelperTextarea = () => {
   const textarea = terminalRef.value?.querySelector('.xterm-helper-textarea')
   if (textarea && !textarea._imeFixed) {
     textarea._imeFixed = true
+    imeTextarea = textarea
 
     textarea.style.opacity = '0'
     textarea.style.color = 'transparent'
@@ -322,16 +326,14 @@ const setupHelperTextarea = () => {
     textarea.style.zIndex = '1'
     textarea.style.caretColor = 'transparent'
 
-    textarea.addEventListener('compositionstart', (e) => {
+    const onCompositionStart = (e) => {
       isComposing = true
       e.stopImmediatePropagation()
-    }, true)
-
-    textarea.addEventListener('compositionupdate', (e) => {
+    }
+    const onCompositionUpdate = (e) => {
       e.stopImmediatePropagation()
-    }, true)
-
-    textarea.addEventListener('compositionend', (e) => {
+    }
+    const onCompositionEnd = (e) => {
       e.stopImmediatePropagation()
       isComposing = false
       const text = e.data
@@ -339,7 +341,14 @@ const setupHelperTextarea = () => {
         emit('data', text)
       }
       Promise.resolve().then(() => { textarea.value = '' })
-    }, true)
+    }
+
+    textarea.addEventListener('compositionstart', onCompositionStart, true)
+    textarea.addEventListener('compositionupdate', onCompositionUpdate, true)
+    textarea.addEventListener('compositionend', onCompositionEnd, true)
+
+    // 保存引用，供 onUnmounted 清理
+    imeHandlers = { onCompositionStart, onCompositionUpdate, onCompositionEnd }
   }
 }
 
@@ -547,6 +556,15 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  // 清理 IME textarea 事件监听器
+  if (imeTextarea && imeHandlers) {
+    imeTextarea.removeEventListener('compositionstart', imeHandlers.onCompositionStart, true)
+    imeTextarea.removeEventListener('compositionupdate', imeHandlers.onCompositionUpdate, true)
+    imeTextarea.removeEventListener('compositionend', imeHandlers.onCompositionEnd, true)
+    imeTextarea = null
+    imeHandlers = null
+  }
+
   // 断开所有 MutationObserver
   if (mutationObserver) {
     mutationObserver.disconnect()
