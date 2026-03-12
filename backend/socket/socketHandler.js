@@ -1,7 +1,11 @@
 const { Client } = require('ssh2');
+const fs = require('fs');
 
 // 存储活跃的SSH连接
 const activeConnections = new Map();
+
+// 存储活跃的SFTP上传任务（用于取消上传）
+const activeUploads = new Map();
 
 // 清理连接的辅助函数
 const cleanupConnection = (socketId) => {
@@ -161,6 +165,141 @@ const socketHandler = (io) => {
     // 心跳检测
     socket.on('ping', () => {
       socket.emit('pong');
+    });
+
+    // ==================== SFTP 文件上传（本地文件 -> 远程服务器）====================
+    
+    /**
+     * 开始 SFTP 文件上传
+     * 数据格式: { sessionId, localPath, remotePath }
+     * - sessionId: SFTP 会话 ID（来自 HTTP API 连接）
+     * - localPath: 本地文件绝对路径
+     * - remotePath: 远程目标路径
+     */
+    socket.on('sftp-upload-start', async (data) => {
+      const { sessionId, localPath, remotePath } = data;
+      const uploadId = `${socket.id}-${Date.now()}`;
+
+      try {
+        // 验证参数
+        if (!sessionId || !localPath || !remotePath) {
+          socket.emit('sftp-upload-error', {
+            uploadId,
+            error: '缺少必要参数：sessionId, localPath, remotePath'
+          });
+          return;
+        }
+
+        // 验证本地文件存在
+        if (!fs.existsSync(localPath)) {
+          socket.emit('sftp-upload-error', {
+            uploadId,
+            error: `本地文件不存在: ${localPath}`
+          });
+          return;
+        }
+
+        // 获取本地文件信息
+        const stats = fs.statSync(localPath);
+        if (!stats.isFile()) {
+          socket.emit('sftp-upload-error', {
+            uploadId,
+            error: `不是有效的文件: ${localPath}`
+          });
+          return;
+        }
+
+        // 从全局 SFTP 连接池获取连接
+        const sftpConnections = require('../routes/sftp-quick-simple').getSftpConnections();
+        if (!sftpConnections || !sftpConnections.has(sessionId)) {
+          socket.emit('sftp-upload-error', {
+            uploadId,
+            error: 'SFTP 会话不存在或已过期，请重新连接'
+          });
+          return;
+        }
+
+        const connectionEntry = sftpConnections.get(sessionId);
+        const sftpHandler = connectionEntry.handler;
+
+        if (!sftpHandler || !sftpHandler.isConnected) {
+          socket.emit('sftp-upload-error', {
+            uploadId,
+            error: 'SFTP 连接已断开，请重新连接'
+          });
+          return;
+        }
+
+        // 发送上传开始事件
+        socket.emit('sftp-upload-started', {
+          uploadId,
+          localPath,
+          remotePath,
+          fileSize: stats.size,
+          fileName: localPath.split(/[/\\]/).pop()
+        });
+
+        // 存储上传任务（用于取消）
+        const uploadContext = { cancelled: false };
+        activeUploads.set(uploadId, uploadContext);
+
+        // 执行流式上传（带进度回调）
+        await sftpHandler.uploadFileWithProgress(localPath, remotePath, (progress) => {
+          // 检查是否已取消，返回 false 终止上传
+          if (uploadContext.cancelled) {
+            return false;
+          }
+
+          // 推送进度事件
+          socket.emit('sftp-upload-progress', {
+            uploadId,
+            loaded: progress.loaded,
+            total: progress.total,
+            percent: progress.percent
+          });
+
+          return true;
+        });
+
+        // 上传完成
+        activeUploads.delete(uploadId);
+        socket.emit('sftp-upload-complete', {
+          uploadId,
+          success: true,
+          localPath,
+          remotePath
+        });
+
+      } catch (error) {
+        activeUploads.delete(uploadId);
+        
+        // 如果是用户主动取消，发送取消事件而非错误
+        if (error.message === '上传已取消') {
+          socket.emit('sftp-upload-cancelled', { uploadId });
+        } else {
+          console.error('SFTP 上传错误:', error);
+          socket.emit('sftp-upload-error', {
+            uploadId,
+            error: error.message || '上传失败'
+          });
+        }
+      }
+    });
+
+    /**
+     * 取消 SFTP 文件上传
+     * 数据格式: { uploadId }
+     */
+    socket.on('sftp-upload-cancel', (data) => {
+      const { uploadId } = data;
+
+      if (activeUploads.has(uploadId)) {
+        const uploadContext = activeUploads.get(uploadId);
+        uploadContext.cancelled = true;
+        activeUploads.delete(uploadId);
+
+        socket.emit('sftp-upload-cancelled', { uploadId });
+      }
     });
   });
 

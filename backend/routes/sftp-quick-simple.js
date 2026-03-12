@@ -24,7 +24,7 @@ const storage = multer.diskStorage({
 const upload = multer({
     storage: storage,
     limits: {
-        fileSize: 100 * 1024 * 1024 // 100MB限制
+        fileSize: 10 * 1024 * 1024 * 1024 // 10GB限制
     }
 });
 
@@ -428,17 +428,56 @@ router.post('/upload', upload.single('file'), async (req, res) => {
         }
 
         const sftpHandler = getQuickSftpConnection(sessionId);
-        await sftpHandler.uploadFile(req.file.path, remotePath);
+        const fileName = req.file.originalname;
+        const totalSize = req.file.size;
+
+        // 获取 Socket.io 实例用于推送进度
+        const io = global.ioInstance;
+        
+        // 进度回调函数
+        const onProgress = (progress) => {
+            if (io) {
+                io.emit('sftp-upload-progress', {
+                    sessionId,
+                    fileName,
+                    loaded: progress.loaded,
+                    total: progress.total,
+                    percent: progress.percent
+                });
+            }
+        };
+
+        await sftpHandler.uploadFile(req.file.path, remotePath, onProgress);
+
+        // 上传完成通知
+        if (io) {
+            io.emit('sftp-upload-complete', {
+                sessionId,
+                fileName,
+                success: true
+            });
+        }
 
         res.json({
             success: true,
             message: '文件上传成功',
-            filename: req.file.originalname,
-            size: req.file.size
+            filename: fileName,
+            size: totalSize
         });
 
     } catch (error) {
         console.error('快速文件上传错误:', error);
+
+        // 上传失败通知
+        const io = global.ioInstance;
+        if (io && req.file) {
+            io.emit('sftp-upload-complete', {
+                sessionId: req.body.sessionId,
+                fileName: req.file.originalname,
+                success: false,
+                error: error.message
+            });
+        }
 
         res.status(500).json({
             success: false,
@@ -532,3 +571,6 @@ router.get('/download', async (req, res) => {
 });
 
 module.exports = router;
+
+// 导出 SFTP 连接池（供 socketHandler 使用）
+module.exports.getSftpConnections = () => sftpConnections;

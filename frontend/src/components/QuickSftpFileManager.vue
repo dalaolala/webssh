@@ -127,6 +127,26 @@
       @change="handleFileUpload"
     />
 
+    <!-- 上传进度条（极简风格） -->
+    <div v-if="isUploading || uploadProgress > 0" class="upload-progress-bar">
+      <div class="upload-info">
+        <span class="upload-filename">{{ uploadFileName }}</span>
+        <span class="upload-size">{{ formatUploadSize(uploadLoaded) }} / {{ formatUploadSize(uploadTotal) }}</span>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill" :style="{ width: uploadProgress + '%' }"></div>
+        <span class="progress-label">{{ uploadProgress }}%</span>
+      </div>
+      <button v-if="isUploading" class="cancel-upload-btn" @click="cancelUpload">取消</button>
+      <button v-else-if="uploadProgress === 100" class="done-upload-btn" @click="handleUploadDone">完成</button>
+    </div>
+
+    <!-- 上传错误提示 -->
+    <div v-if="uploadError" class="upload-error-bar">
+      <span>上传失败: {{ uploadError }}</span>
+      <button class="retry-upload-btn" @click="resetUpload">关闭</button>
+    </div>
+
     <!-- 对话框 -->
     <el-dialog v-model="showCreateDirDialog" title="新建文件夹" width="400px">
       <el-form :model="createDirForm" label-width="80px">
@@ -184,9 +204,24 @@ import {
   Folder, Document, Right
 } from '@element-plus/icons-vue'
 import { useThemeStore } from '@/stores/theme'
+import { useSftpUpload } from '@/composables/useSftpUpload'
 
 const themeStore = useThemeStore()
 const { isDark } = storeToRefs(themeStore)
+
+// 使用 SFTP 上传 composable（带进度条）
+const {
+  isUploading,
+  uploadProgress,
+  uploadLoaded,
+  uploadTotal,
+  uploadFileName,
+  uploadError,
+  startUpload,
+  cancelUpload,
+  resetUpload,
+  formatFileSize: formatUploadSize
+} = useSftpUpload()
 
 const props = defineProps({
   sftp: {
@@ -363,19 +398,44 @@ const handleUploadClick = () => {
   fileInput.value.click();
 };
 
+/**
+ * 处理文件选择 - 使用 WebSocket 实现带进度条的上传
+ * Electron 环境：直接获取本地文件路径，后端流式读取并上传
+ */
 const handleFileUpload = async (event) => {
   const filesList = Array.from(event.target.files);
-  
+  if (filesList.length === 0) return;
+
+  // 逐个上传文件
   for (const file of filesList) {
     try {
-      await props.sftp.uploadFile(file);
-      ElMessage.success(`文件 ${file.name} 上传成功`);
+      // Electron 环境：file.path 是本地文件的绝对路径
+      // Web 环境无法获取绝对路径，需要用户手动输入或使用其他方式
+      const localPath = file.path || file.name;
+      
+      // 构建远程目标路径
+      const remotePath = currentPath.value === '/'
+        ? `/${file.name}`
+        : `${currentPath.value}/${file.name}`;
+
+      // 使用 WebSocket 上传（带进度条）
+      await startUpload(props.sftp.sessionId.value, localPath, remotePath);
+      
     } catch (err) {
       ElMessage.error(`文件 ${file.name} 上传失败: ` + err.message);
     }
   }
   
   event.target.value = '';
+};
+
+/**
+ * 上传完成后刷新目录
+ */
+const handleUploadDone = () => {
+  resetUpload();
+  refreshDirectory();
+  ElMessage.success('文件上传成功');
 };
 
 const handleCreateDirectory = async () => {
@@ -632,5 +692,147 @@ onMounted(() => {
 .file-editor-monaco {
   flex: 1;
   min-height: 0;
+}
+
+/* 上传进度条样式 - 极简终端风格 */
+.upload-progress-bar {
+  padding: 12px 16px;
+  background: #f0f7ff;
+  border-bottom: 1px solid #d0e4ff;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.dark-theme .upload-progress-bar {
+  background: rgba(0, 50, 100, 0.3);
+  border-bottom: 1px solid rgba(0, 122, 255, 0.3);
+}
+
+.upload-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+  flex: 1;
+}
+
+.upload-filename {
+  font-weight: 500;
+  font-size: 13px;
+  color: #303133;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dark-theme .upload-filename {
+  color: #e0e0e0;
+}
+
+.upload-size {
+  font-size: 11px;
+  color: #909399;
+  margin-top: 2px;
+}
+
+.dark-theme .upload-size {
+  color: #888;
+}
+
+.progress-track {
+  flex: 2;
+  min-width: 200px;
+  height: 20px;
+  background: #e0e0e0;
+  border-radius: 10px;
+  position: relative;
+  overflow: hidden;
+}
+
+.dark-theme .progress-track {
+  background: #3c3c3c;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4caf50, #8bc34a);
+  border-radius: 10px;
+  transition: width 0.3s ease;
+}
+
+.progress-label {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 11px;
+  font-weight: 600;
+  color: #333;
+}
+
+.dark-theme .progress-label {
+  color: #e0e0e0;
+}
+
+.cancel-upload-btn,
+.done-upload-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.cancel-upload-btn {
+  background: #f44336;
+  color: #fff;
+}
+
+.cancel-upload-btn:hover {
+  background: #d32f2f;
+}
+
+.done-upload-btn {
+  background: #4caf50;
+  color: #fff;
+}
+
+.done-upload-btn:hover {
+  background: #388e3c;
+}
+
+/* 上传错误提示 */
+.upload-error-bar {
+  padding: 10px 16px;
+  background: #ffebee;
+  border-bottom: 1px solid #ffcdd2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  color: #c62828;
+}
+
+.dark-theme .upload-error-bar {
+  background: rgba(100, 30, 30, 0.3);
+  border-bottom: 1px solid rgba(200, 50, 50, 0.3);
+  color: #ef9a9a;
+}
+
+.retry-upload-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  background: #ff9800;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.retry-upload-btn:hover {
+  background: #f57c00;
 }
 </style>
