@@ -2,7 +2,10 @@
   <div class="terminal-theme-selector" ref="rootRef">
     <!-- 触发按钮 -->
     <button class="appearance-btn" :class="{ active: visible }" @click="toggle" aria-label="终端外观">
-      <el-icon><Setting /></el-icon>
+      <svg class="appearance-btn-icon" viewBox="0 0 14 14" fill="none">
+        <circle cx="7" cy="7" r="2" stroke="currentColor" stroke-width="1.2"/>
+        <path d="M7 1v1.5M7 11.5V13M13 7h-1.5M2.5 7H1M11.24 2.76l-1.06 1.06M3.82 10.18l-1.06 1.06M11.24 11.24l-1.06-1.06M3.82 3.82L2.76 2.76" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+      </svg>
       <span>外观</span>
     </button>
 
@@ -106,7 +109,6 @@
 
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from 'vue'
-import { Setting } from '@element-plus/icons-vue'
 import { useTerminalThemeStore } from '@/stores/terminalTheme'
 
 const terminalThemeStore = useTerminalThemeStore()
@@ -131,35 +133,50 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onClickOutside))
   display: inline-flex;
 }
 
-/* 触发按钮 */
+/* 触发按钮 — 与 TerminalStatusBar .sb-btn 完全对齐 */
 .appearance-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 10px;
-  border-radius: 6px;
+  gap: 5px;
+  padding: 3px 9px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.5);
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+  font-size: 11.5px;
+  font-weight: 400;
   cursor: pointer;
-  transition: all 0.2s ease;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.55);
-  font-size: 11px;
+  transition: background 0.14s, color 0.14s;
+  white-space: nowrap;
+  height: 22px;
 }
 
 .appearance-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #ffffff;
+  background: rgba(255, 255, 255, 0.09);
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.appearance-btn:active {
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .appearance-btn.active {
-  background: rgba(0, 122, 255, 0.15);
-  border-color: rgba(0, 122, 255, 0.3);
-  color: #0a84ff;
-  font-weight: 500;
+  background: rgba(10, 132, 255, 0.18);
+  color: #4da3ff;
+  border: 1px solid rgba(10, 132, 255, 0.25);
 }
 
-.appearance-btn .el-icon {
-  font-size: 13px;
+.appearance-btn.active:hover {
+  background: rgba(10, 132, 255, 0.26);
+  color: #6db8ff;
+}
+
+.appearance-btn-icon {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  opacity: 0.9;
 }
 
 /* 面板 */
