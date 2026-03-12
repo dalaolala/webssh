@@ -13,6 +13,17 @@ const pendingCancels = new Set();
 // 存储上传断点信息（用于断点续传）
 const uploadResumables = new Map();
 
+// 定期清理过期的预取消请求（每5分钟清理一次）
+setInterval(() => {
+  // pendingCancels 是 Set，存储的是 localPath
+  // 由于没有时间戳，我们简单地在每次清理时清空
+  // 因为预取消请求只在短时间内有效
+  if (pendingCancels.size > 100) {
+    console.log(`清理过期的预取消请求: ${pendingCancels.size} 个`);
+    pendingCancels.clear();
+  }
+}, 5 * 60 * 1000);
+
 // 清理连接的辅助函数
 const cleanupConnection = (socketId) => {
   const connection = activeConnections.get(socketId);
@@ -160,6 +171,14 @@ const socketHandler = (io) => {
       console.log('用户断开连接:', socket.id);
       cleanupConnection(socket.id);
       global.ioSockets.delete(socket.id);
+      
+      // 清理该 socket 相关的上传任务
+      for (const [uploadId, context] of activeUploads.entries()) {
+        if (uploadId.startsWith(socket.id)) {
+          context.cancelled = true;
+          activeUploads.delete(uploadId);
+        }
+      }
     });
 
     // 处理错误

@@ -326,6 +326,12 @@ export function useSftpUpload() {
   // 组件卸载时断开 socket 连接
   onUnmounted(() => {
     if (socket) {
+      // 移除所有事件监听器，避免内存泄漏
+      socket.off('sftp-upload-started')
+      socket.off('sftp-upload-progress')
+      socket.off('sftp-upload-complete')
+      socket.off('sftp-upload-error')
+      socket.off('sftp-upload-cancelled')
       socket.disconnect()
       socket = null
     }
