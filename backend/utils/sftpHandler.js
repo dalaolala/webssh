@@ -129,9 +129,10 @@ class SftpHandler {
    * @param {string} localPath - 本地文件绝对路径
    * @param {string} remotePath - 远程目标路径
    * @param {function} onProgress - 进度回调，返回 false 时取消上传
+   * @param {number} startPosition - 断点续传起始位置，默认 0
    * @returns {Promise<void>}
    */
-  async uploadFileWithProgress(localPath, remotePath, onProgress = null) {
+  async uploadFileWithProgress(localPath, remotePath, onProgress = null, startPosition = 0) {
     if (!this.isConnected) {
       throw new Error('SFTP not connected');
     }
@@ -140,22 +141,73 @@ class SftpHandler {
       // 获取本地文件大小
       const stats = fs.statSync(localPath);
       const totalSize = stats.size;
-      let loaded = 0;
-      let lastReportedPercent = -1;
+      let loaded = startPosition; // 从断点位置开始计算
+      let lastReportedPercent = startPosition > 0 ? Math.floor((startPosition / totalSize) * 100) : -1;
       let isCancelled = false;
+      let isResolved = false;
 
-      // 创建本地文件读取流
+      // 创建本地文件读取流，从断点位置开始
       const readStream = fs.createReadStream(localPath, {
+        start: startPosition,
         highWaterMark: 64 * 1024 // 64KB 块大小，平衡内存和进度更新频率
       });
 
-      // 创建远程文件写入流
-      const writeStream = this.sftp.createWriteStream(remotePath);
+      // 创建远程文件写入流（追加模式）
+      const writeStream = this.sftp.createWriteStream(remotePath, {
+        flags: startPosition > 0 ? 'a' : 'w' // 'a' 追加模式，'w' 覆盖模式
+      });
+
+      // 统一的清理函数，避免内存泄漏
+      const cleanup = (error) => {
+        if (isResolved) return;
+        isResolved = true;
+
+        // 先解绑管道
+        readStream.unpipe(writeStream);
+
+        // 销毁流
+        readStream.destroy();
+        writeStream.destroy();
+
+        // 移除所有事件监听器
+        readStream.removeAllListeners();
+        writeStream.removeAllListeners();
+
+        if (error) {
+          reject(error);
+        }
+      };
+
+      // 检查取消状态的函数
+      const checkCancelled = () => {
+        if (onProgress) {
+          try {
+            const result = onProgress({
+              loaded,
+              total: totalSize,
+              percent: Math.floor((loaded / totalSize) * 100),
+              checkOnly: true // 标记这只是检查取消状态
+            });
+            if (result === false) {
+              isCancelled = true;
+              cleanup(new Error('上传已取消'));
+              return true;
+            }
+          } catch (err) {
+            if (err.message === '上传已取消') {
+              isCancelled = true;
+              cleanup(err);
+              return true;
+            }
+          }
+        }
+        return false;
+      };
 
       // 监听读取流的数据事件，计算进度
       readStream.on('data', (chunk) => {
         // 检查是否已取消
-        if (isCancelled) {
+        if (isCancelled || isResolved) {
           return;
         }
 
@@ -174,45 +226,45 @@ class SftpHandler {
             // 如果回调返回 false，取消上传
             if (result === false) {
               isCancelled = true;
-              readStream.destroy();
-              writeStream.destroy();
-              reject(new Error('上传已取消'));
+              cleanup(new Error('上传已取消'));
             }
           } catch (err) {
             // 如果回调抛出异常，检查是否是取消操作
             if (err.message === '上传已取消') {
               isCancelled = true;
-              readStream.destroy();
-              writeStream.destroy();
-              reject(err);
+              cleanup(err);
             } else {
-              // 其他异常继续传播
               console.error('进度回调异常:', err);
             }
+          }
+        } else {
+          // 即使没有进度更新，也定期检查取消状态（每 256KB 检查一次）
+          if (loaded % (256 * 1024) < chunk.length) {
+            checkCancelled();
           }
         }
       });
 
       // 处理错误
       readStream.on('error', (err) => {
-        if (!isCancelled) {
-          writeStream.destroy();
-          reject(new Error(`读取本地文件失败: ${err.message}`));
+        if (!isCancelled && !isResolved) {
+          cleanup(new Error(`读取本地文件失败: ${err.message}`));
         }
       });
 
       writeStream.on('error', (err) => {
-        if (!isCancelled) {
-          readStream.destroy();
-          reject(new Error(`上传到远程服务器失败: ${err.message}`));
+        if (!isCancelled && !isResolved) {
+          cleanup(new Error(`上传到远程服务器失败: ${err.message}`));
         }
       });
 
       // 上传完成
       writeStream.on('close', () => {
-        if (isCancelled) {
+        if (isCancelled || isResolved) {
           return;
         }
+        isResolved = true;
+
         // 确保最终进度为 100%
         if (onProgress && lastReportedPercent !== 100) {
           onProgress({
@@ -226,6 +278,28 @@ class SftpHandler {
 
       // 管道传输：读取流 -> 写入流
       readStream.pipe(writeStream);
+    });
+  }
+
+  /**
+   * 获取远程文件大小（用于断点续传）
+   * @param {string} remotePath - 远程文件路径
+   * @returns {Promise<number>} 文件大小，不存在返回 0
+   */
+  async getRemoteFileSize(remotePath) {
+    if (!this.isConnected) {
+      throw new Error('SFTP not connected');
+    }
+
+    return new Promise((resolve) => {
+      this.sftp.stat(remotePath, (err, stats) => {
+        if (err) {
+          // 文件不存在或其他错误，返回 0
+          resolve(0);
+          return;
+        }
+        resolve(stats.size);
+      });
     });
   }
 

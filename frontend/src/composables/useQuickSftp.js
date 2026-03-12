@@ -213,8 +213,8 @@ export function useQuickSftp() {
         }
     };
 
-    // 删除文件或目录
-    const deleteItem = async (itemPath, itemType) => {
+    // 删除文件或目录（不刷新目录）
+    const deleteItemOnly = async (itemPath, itemType) => {
         try {
             const response = await axios.delete('/api/sftp/quick/delete', {
                 data: {
@@ -225,7 +225,6 @@ export function useQuickSftp() {
             });
 
             if (response.data.success) {
-                await listDirectory(currentPath.value);
                 return true;
             } else {
                 throw new Error(response.data.message);
@@ -234,6 +233,13 @@ export function useQuickSftp() {
             error.value = err.response?.data?.message || err.message;
             throw err;
         }
+    };
+
+    // 删除文件或目录（删除后刷新目录）
+    const deleteItem = async (itemPath, itemType) => {
+        await deleteItemOnly(itemPath, itemType);
+        await listDirectory(currentPath.value);
+        return true;
     };
 
     // 重命名文件或目录
@@ -347,6 +353,7 @@ export function useQuickSftp() {
         saveFile,
         createDirectory,
         deleteItem,
+        deleteItemOnly,
         renameItem,
         uploadFile,
         downloadFile,

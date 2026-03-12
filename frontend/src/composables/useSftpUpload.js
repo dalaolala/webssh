@@ -1,8 +1,8 @@
 /**
  * SFTP 文件上传 Composable
- * 通过 WebSocket 实现本地文件上传到远程服务器，支持实时进度显示
+ * 通过 WebSocket 实现本地文件上传到远程服务器，支持多文件并行上传和实时进度显示
  */
-import { ref, onUnmounted } from 'vue'
+import { ref, computed, onUnmounted } from 'vue'
 import { io } from 'socket.io-client'
 
 /**
@@ -13,17 +13,46 @@ export function useSftpUpload() {
   // Socket 连接
   let socket = null
 
-  // 上传状态
-  const isUploading = ref(false)
-  const uploadProgress = ref(0) // 0-100
-  const uploadLoaded = ref(0)   // 已上传字节数
-  const uploadTotal = ref(0)    // 总字节数
-  const uploadFileName = ref('')
-  const uploadError = ref(null)
-  const currentUploadId = ref(null)
+  // 上传任务列表（支持多文件并行上传）
+  const uploadTasks = ref([])
 
-  // 上传历史记录
-  const uploadHistory = ref([])
+  // 计算属性：是否有任务正在上传
+  const isUploading = computed(() => {
+    return uploadTasks.value.some(task => task.status === 'uploading')
+  })
+
+  // 计算属性：正在上传的任务数量
+  const uploadingCount = computed(() => {
+    return uploadTasks.value.filter(task => task.status === 'uploading').length
+  })
+
+  // 计算属性：总进度（所有任务的平均进度）
+  const totalProgress = computed(() => {
+    const tasks = uploadTasks.value.filter(t => t.status !== 'pending')
+    if (tasks.length === 0) return 0
+    const total = tasks.reduce((sum, t) => sum + (t.progress || 0), 0)
+    return Math.round(total / tasks.length)
+  })
+
+  // 计算属性：是否所有任务都已完成（完成或取消）
+  const allTasksFinished = computed(() => {
+    if (uploadTasks.value.length === 0) return false
+    return uploadTasks.value.every(t =>
+      t.status === 'completed' || t.status === 'cancelled' || t.status === 'error'
+    )
+  })
+
+  // 计算属性：是否所有任务都成功完成
+  const allTasksCompleted = computed(() => {
+    if (uploadTasks.value.length === 0) return false
+    return uploadTasks.value.every(t => t.status === 'completed')
+  })
+
+  // 计算属性：是否所有任务都被取消
+  const allTasksCancelled = computed(() => {
+    if (uploadTasks.value.length === 0) return false
+    return uploadTasks.value.every(t => t.status === 'cancelled')
+  })
 
   /**
    * 初始化 Socket 连接
@@ -37,88 +66,77 @@ export function useSftpUpload() {
 
     // 监听上传开始
     socket.on('sftp-upload-started', (data) => {
-      const { uploadId, localPath, remotePath, fileSize, fileName } = data
-      currentUploadId.value = uploadId
-      uploadFileName.value = fileName
-      uploadTotal.value = fileSize
-      uploadLoaded.value = 0
-      uploadProgress.value = 0
-      uploadError.value = null
-      isUploading.value = true
+      const { uploadId, localPath, remotePath, fileSize, fileName, startPosition = 0, isResuming = false } = data
 
-      // 添加到历史记录
-      uploadHistory.value.unshift({
-        uploadId,
-        fileName,
-        localPath,
-        remotePath,
-        fileSize,
-        status: 'uploading',
-        progress: 0,
-        startTime: Date.now()
-      })
+      // 通过 localPath 匹配任务（因为前端使用临时 ID，后端使用不同的 ID）
+      const task = uploadTasks.value.find(t => t.localPath === localPath && t.status === 'pending')
+      if (task) {
+        // 更新为后端返回的真实 uploadId
+        task.uploadId = uploadId
+        task.status = 'uploading'
+        task.fileName = fileName
+        task.localPath = localPath
+        task.remotePath = remotePath
+        task.fileSize = fileSize
+        task.progress = startPosition > 0 ? Math.floor((startPosition / fileSize) * 100) : 0
+        task.loaded = startPosition
+        task.total = fileSize
+        task.startTime = Date.now()
+        task.isResuming = isResuming // 是否为断点续传
+      }
     })
 
     // 监听上传进度
     socket.on('sftp-upload-progress', (data) => {
       const { uploadId, loaded, total, percent } = data
-      if (uploadId === currentUploadId.value) {
-        uploadLoaded.value = loaded
-        uploadTotal.value = total
-        uploadProgress.value = percent
-
-        // 更新历史记录
-        const historyItem = uploadHistory.value.find(h => h.uploadId === uploadId)
-        if (historyItem) {
-          historyItem.progress = percent
-          historyItem.loaded = loaded
-        }
+      
+      const task = uploadTasks.value.find(t => t.uploadId === uploadId)
+      if (task) {
+        task.loaded = loaded
+        task.total = total
+        task.progress = percent
       }
     })
 
     // 监听上传完成
     socket.on('sftp-upload-complete', (data) => {
-      const { uploadId, success, localPath, remotePath } = data
-      if (uploadId === currentUploadId.value) {
-        isUploading.value = false
-        uploadProgress.value = 100
-
-        // 更新历史记录
-        const historyItem = uploadHistory.value.find(h => h.uploadId === uploadId)
-        if (historyItem) {
-          historyItem.status = 'completed'
-          historyItem.progress = 100
-          historyItem.endTime = Date.now()
-        }
+      const { uploadId } = data
+      
+      const task = uploadTasks.value.find(t => t.uploadId === uploadId)
+      if (task) {
+        task.status = 'completed'
+        task.progress = 100
+        task.endTime = Date.now()
       }
     })
 
     // 监听上传错误
     socket.on('sftp-upload-error', (data) => {
-      const { uploadId, error } = data
-      isUploading.value = false
-      uploadError.value = error
+      const { uploadId, localPath, error } = data
 
-      // 更新历史记录
-      const historyItem = uploadHistory.value.find(h => h.uploadId === uploadId)
-      if (historyItem) {
-        historyItem.status = 'error'
-        historyItem.error = error
-        historyItem.endTime = Date.now()
+      // 先尝试通过 uploadId 匹配
+      let task = uploadTasks.value.find(t => t.uploadId === uploadId)
+
+      // 如果找不到，尝试通过 localPath 匹配（处理文件夹上传等场景）
+      if (!task && localPath) {
+        task = uploadTasks.value.find(t => t.localPath === localPath && t.status === 'pending')
+      }
+
+      if (task) {
+        task.status = 'error'
+        task.error = error
+        task.endTime = Date.now()
       }
     })
 
     // 监听上传取消
     socket.on('sftp-upload-cancelled', (data) => {
       const { uploadId } = data
-      isUploading.value = false
-      uploadProgress.value = 0
-
-      // 更新历史记录
-      const historyItem = uploadHistory.value.find(h => h.uploadId === uploadId)
-      if (historyItem) {
-        historyItem.status = 'cancelled'
-        historyItem.endTime = Date.now()
+      
+      const task = uploadTasks.value.find(t => t.uploadId === uploadId)
+      if (task) {
+        task.status = 'cancelled'
+        task.endTime = Date.now()
       }
     })
 
@@ -126,81 +144,183 @@ export function useSftpUpload() {
   }
 
   /**
-   * 开始上传本地文件到远程服务器
+   * 添加上传任务
    * @param {string} sessionId - SFTP 会话 ID
    * @param {string} localPath - 本地文件绝对路径
    * @param {string} remotePath - 远程目标路径
-   * @returns {Promise<void>}
+   * @returns {string} uploadId
    */
-  const startUpload = async (sessionId, localPath, remotePath) => {
-    return new Promise((resolve, reject) => {
-      // 确保 socket 已连接
-      const sock = initSocket()
+  const addUploadTask = (sessionId, localPath, remotePath) => {
+    const sock = initSocket()
+    
+    // 生成临时 uploadId（后端会返回正式的）
+    const tempUploadId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
+    const fileName = localPath.split(/[/\\]/).pop()
 
-      if (!sock || !sock.connected) {
-        sock.on('connect', () => {
-          sock.emit('sftp-upload-start', {
-            sessionId,
-            localPath,
-            remotePath
-          })
-          resolve()
-        })
+    // 创建任务
+    const task = {
+      uploadId: tempUploadId,
+      fileName,
+      localPath,
+      remotePath,
+      status: 'pending',
+      progress: 0,
+      loaded: 0,
+      total: 0,
+      fileSize: 0,
+      startTime: null,
+      endTime: null,
+      error: null
+    }
 
-        sock.on('connect_error', (err) => {
-          reject(new Error('WebSocket 连接失败: ' + err.message))
-        })
-      } else {
+    uploadTasks.value.push(task)
+
+    // 发送上传请求
+    if (sock && sock.connected) {
+      sock.emit('sftp-upload-start', {
+        sessionId,
+        localPath,
+        remotePath
+      })
+    } else {
+      sock.on('connect', () => {
         sock.emit('sftp-upload-start', {
           sessionId,
           localPath,
           remotePath
         })
-        resolve()
-      }
-    })
+      })
+    }
+
+    return tempUploadId
   }
 
   /**
-   * 取消当前上传
+   * 批量添加上传任务
+   * @param {string} sessionId - SFTP 会话 ID
+   * @param {Array} files - 文件列表 [{ localPath, remotePath }, ...]
    */
-  const cancelUpload = () => {
-    if (socket && currentUploadId.value) {
+  const addUploadTasks = (sessionId, files) => {
+    const uploadIds = []
+    for (const file of files) {
+      const uploadId = addUploadTask(sessionId, file.localPath, file.remotePath)
+      uploadIds.push(uploadId)
+    }
+    return uploadIds
+  }
+
+  /**
+   * 取消指定上传任务
+   * @param {string} uploadId
+   */
+  const cancelUpload = (uploadId) => {
+    if (socket) {
+      // 同时发送 uploadId 和 localPath，确保后端能找到任务
+      const task = uploadTasks.value.find(t => t.uploadId === uploadId)
       socket.emit('sftp-upload-cancel', {
-        uploadId: currentUploadId.value
+        uploadId,
+        localPath: task?.localPath
       })
     }
   }
 
   /**
-   * 重置上传状态
+   * 取消所有正在上传的任务
    */
-  const resetUpload = () => {
-    isUploading.value = false
-    uploadProgress.value = 0
-    uploadLoaded.value = 0
-    uploadTotal.value = 0
-    uploadFileName.value = ''
-    uploadError.value = null
-    currentUploadId.value = null
+  const cancelAllUploads = () => {
+    // 取消正在上传的任务
+    uploadTasks.value
+      .filter(t => t.status === 'uploading')
+      .forEach(t => cancelUpload(t.uploadId))
+
+    // 取消 pending 状态的任务（通知后端取消，并标记前端状态）
+    uploadTasks.value
+      .filter(t => t.status === 'pending')
+      .forEach(t => {
+        // 通知后端取消（通过 localPath）
+        if (socket) {
+          socket.emit('sftp-upload-cancel', { localPath: t.localPath })
+        }
+        t.status = 'cancelled'
+        t.endTime = Date.now()
+      })
   }
 
   /**
-   * 清除上传历史
+   * 移除已完成的任务（包括 completed、cancelled、error 状态）
    */
-  const clearHistory = () => {
-    uploadHistory.value = []
+  const clearCompletedTasks = () => {
+    uploadTasks.value = uploadTasks.value.filter(
+      t => t.status === 'uploading' || t.status === 'pending'
+    )
+  }
+
+  /**
+   * 清空所有已完成的任务
+   */
+  const clearAllFinishedTasks = () => {
+    uploadTasks.value = uploadTasks.value.filter(
+      t => t.status === 'uploading' || t.status === 'pending'
+    )
+  }
+
+  /**
+   * 清空所有任务
+   */
+  const clearAllTasks = () => {
+    // 先取消所有正在上传的任务
+    cancelAllUploads()
+    uploadTasks.value = []
+  }
+
+  /**
+   * 移除指定任务
+   * @param {string} uploadId
+   */
+  const removeTask = (uploadId) => {
+    const task = uploadTasks.value.find(t => t.uploadId === uploadId)
+    if (task && task.status === 'uploading') {
+      cancelUpload(uploadId)
+    }
+    uploadTasks.value = uploadTasks.value.filter(t => t.uploadId !== uploadId)
   }
 
   /**
    * 格式化文件大小
    */
   const formatFileSize = (bytes) => {
-    if (bytes === 0) return '0 B'
+    if (!bytes || bytes === 0) return '0 B'
     const k = 1024
     const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
     const i = Math.floor(Math.log(bytes) / Math.log(k))
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+  }
+
+  /**
+   * 获取任务状态文本
+   */
+  const getStatusText = (task) => {
+    // 如果传入的是字符串（向后兼容）
+    if (typeof task === 'string') {
+      const map = {
+        pending: '等待中',
+        uploading: '上传中',
+        completed: '已完成',
+        error: '失败',
+        cancelled: '已取消'
+      }
+      return map[task] || task
+    }
+
+    // 传入的是任务对象
+    const map = {
+      pending: '等待中',
+      uploading: task?.isResuming ? '续传中' : '上传中',
+      completed: '已完成',
+      error: '失败',
+      cancelled: '已取消'
+    }
+    return map[task?.status] || task?.status
   }
 
   // 组件卸载时断开 socket 连接
@@ -213,19 +333,24 @@ export function useSftpUpload() {
 
   return {
     // 状态
+    uploadTasks,
     isUploading,
-    uploadProgress,
-    uploadLoaded,
-    uploadTotal,
-    uploadFileName,
-    uploadError,
-    uploadHistory,
+    uploadingCount,
+    totalProgress,
+    allTasksFinished,
+    allTasksCompleted,
+    allTasksCancelled,
 
     // 方法
-    startUpload,
+    addUploadTask,
+    addUploadTasks,
     cancelUpload,
-    resetUpload,
-    clearHistory,
-    formatFileSize
+    cancelAllUploads,
+    clearCompletedTasks,
+    clearAllFinishedTasks,
+    clearAllTasks,
+    removeTask,
+    formatFileSize,
+    getStatusText
   }
 }

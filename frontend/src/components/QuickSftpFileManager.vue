@@ -1,5 +1,20 @@
 <template>
-  <div class="sftp-file-manager" :class="{ 'dark-theme': isDark }">
+  <div 
+    class="sftp-file-manager" 
+    :class="{ 'dark-theme': isDark, 'drag-over': isDragOver }"
+    @dragover.prevent="handleDragOver"
+    @dragleave.prevent="handleDragLeave"
+    @drop.prevent="handleDrop"
+  >
+    <!-- 拖拽上传遮罩层 -->
+    <div v-if="isDragOver" class="drag-overlay">
+      <div class="drag-content">
+        <el-icon class="drag-icon"><Upload /></el-icon>
+        <p class="drag-text">释放文件到此处上传</p>
+        <p class="drag-hint">文件将上传到: {{ currentPath }}</p>
+      </div>
+    </div>
+
     <!-- 顶部工具栏 -->
     <div class="toolbar">
       <div class="toolbar-buttons">
@@ -127,24 +142,69 @@
       @change="handleFileUpload"
     />
 
-    <!-- 上传进度条（极简风格） -->
-    <div v-if="isUploading || uploadProgress > 0" class="upload-progress-bar">
-      <div class="upload-info">
-        <span class="upload-filename">{{ uploadFileName }}</span>
-        <span class="upload-size">{{ formatUploadSize(uploadLoaded) }} / {{ formatUploadSize(uploadTotal) }}</span>
+    <!-- 多文件上传进度区域 -->
+    <div v-if="uploadTasks.length > 0" class="upload-progress-area">
+      <!-- 顶部汇总信息 -->
+      <div class="upload-summary">
+        <span class="summary-text">
+          <template v-if="isUploading">
+            正在上传 {{ uploadingCount }} 个文件...
+          </template>
+          <template v-else>
+            上传完成
+          </template>
+        </span>
+        <div class="summary-actions">
+          <button v-if="isUploading" class="cancel-all-btn" @click="cancelAllUploads">全部取消</button>
+          <button v-else class="clear-all-btn" @click="handleUploadDone">完成并刷新</button>
+        </div>
       </div>
-      <div class="progress-track">
-        <div class="progress-fill" :style="{ width: uploadProgress + '%' }"></div>
-        <span class="progress-label">{{ uploadProgress }}%</span>
-      </div>
-      <button v-if="isUploading" class="cancel-upload-btn" @click="cancelUpload">取消</button>
-      <button v-else-if="uploadProgress === 100" class="done-upload-btn" @click="handleUploadDone">完成</button>
-    </div>
 
-    <!-- 上传错误提示 -->
-    <div v-if="uploadError" class="upload-error-bar">
-      <span>上传失败: {{ uploadError }}</span>
-      <button class="retry-upload-btn" @click="resetUpload">关闭</button>
+      <!-- 每个文件的进度条 -->
+      <div class="upload-tasks-list">
+        <div 
+          v-for="task in uploadTasks" 
+          :key="task.uploadId" 
+          class="upload-task-item"
+          :class="task.status"
+        >
+          <div class="task-info">
+            <span class="task-filename">{{ task.fileName }}</span>
+            <span class="task-status">{{ getStatusText(task) }}</span>
+          </div>
+          
+          <div class="task-progress">
+            <div class="progress-track-mini">
+              <div 
+                class="progress-fill-mini" 
+                :style="{ width: task.progress + '%' }"
+                :class="task.status"
+              ></div>
+            </div>
+            <span class="progress-percent">{{ task.progress }}%</span>
+            <span v-if="task.loaded && task.total" class="progress-size">
+              {{ formatUploadSize(task.loaded) }} / {{ formatUploadSize(task.total) }}
+            </span>
+          </div>
+
+          <!-- 任务操作按钮 -->
+          <div class="task-actions">
+            <button 
+              v-if="task.status === 'uploading'" 
+              class="task-cancel-btn" 
+              @click="cancelUpload(task.uploadId)"
+            >取消</button>
+            <button 
+              v-if="task.status === 'error'" 
+              class="task-retry-btn"
+              @click="removeTask(task.uploadId)"
+            >关闭</button>
+          </div>
+
+          <!-- 错误信息 -->
+          <div v-if="task.error" class="task-error">{{ task.error }}</div>
+        </div>
+      </div>
     </div>
 
     <!-- 对话框 -->
@@ -209,18 +269,21 @@ import { useSftpUpload } from '@/composables/useSftpUpload'
 const themeStore = useThemeStore()
 const { isDark } = storeToRefs(themeStore)
 
-// 使用 SFTP 上传 composable（带进度条）
+// 使用 SFTP 上传 composable（支持多文件并行上传）
 const {
+  uploadTasks,
   isUploading,
-  uploadProgress,
-  uploadLoaded,
-  uploadTotal,
-  uploadFileName,
-  uploadError,
-  startUpload,
+  uploadingCount,
+  allTasksFinished,
+  allTasksCompleted,
+  allTasksCancelled,
+  addUploadTasks,
   cancelUpload,
-  resetUpload,
-  formatFileSize: formatUploadSize
+  cancelAllUploads,
+  clearAllFinishedTasks,
+  removeTask,
+  formatFileSize: formatUploadSize,
+  getStatusText
 } = useSftpUpload()
 
 const props = defineProps({
@@ -231,6 +294,9 @@ const props = defineProps({
 });
 
 const fileInput = ref(null);
+
+// 拖拽上传状态
+const isDragOver = ref(false);
 
 // 响应式数据
 const showCreateDirDialog = ref(false);
@@ -264,6 +330,23 @@ const inputPath = ref(currentPath.value);
 // 当 currentPath 变化时，自动更新输入框中的路径
 watch(currentPath, (newVal) => {
   inputPath.value = newVal;
+});
+
+// 监听上传任务状态，全部完成或全部取消时自动刷新
+watch(allTasksFinished, (finished) => {
+  if (finished && uploadTasks.value.length > 0) {
+    // 延迟一下刷新，让用户看到最终状态
+    setTimeout(async () => {
+      await refreshDirectory();
+      if (allTasksCompleted.value) {
+        ElMessage.success('所有文件上传完成');
+      } else if (allTasksCancelled.value) {
+        ElMessage.info('已取消所有上传任务');
+      }
+      // 清空任务列表
+      clearAllFinishedTasks();
+    }, 500);
+  }
 });
 
 // 方法
@@ -367,7 +450,15 @@ const handleDelete = async (file) => {
 
 const handleDeleteSelected = async () => {
   try {
-    const count = selectedFiles.value.size;
+    // 先复制选中的文件列表（避免迭代过程中 Set 被修改）
+    const selectedPaths = Array.from(selectedFiles.value);
+    const count = selectedPaths.length;
+
+    if (count === 0) {
+      ElMessage.warning('请先选择要删除的文件');
+      return;
+    }
+
     await ElMessageBox.confirm(
       `确定要删除选中的 ${count} 个项目吗？`,
       '确认删除',
@@ -377,16 +468,37 @@ const handleDeleteSelected = async () => {
         type: 'warning'
       }
     );
-    
-    for (const filePath of selectedFiles.value) {
+
+    // 清除选择状态
+    props.sftp.clearSelection();
+
+    // 逐个删除文件（使用 deleteItemOnly 不刷新目录）
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const filePath of selectedPaths) {
+      // 从当前文件列表中查找文件信息
       const file = files.value.find(f => f.path === filePath);
       if (file) {
-        await props.sftp.deleteItem(file.path, file.type);
+        try {
+          await props.sftp.deleteItemOnly(file.path, file.type);
+          successCount++;
+        } catch (err) {
+          console.error(`删除 ${file.name} 失败:`, err);
+          failCount++;
+        }
       }
     }
-    
-    ElMessage.success(`成功删除 ${count} 个项目`);
-    props.sftp.clearSelection();
+
+    // 批量删除完成后，只刷新一次目录
+    await refreshDirectory();
+
+    // 显示结果
+    if (failCount === 0) {
+      ElMessage.success(`成功删除 ${successCount} 个项目`);
+    } else {
+      ElMessage.warning(`删除完成：成功 ${successCount} 个，失败 ${failCount} 个`);
+    }
   } catch (err) {
     if (err !== 'cancel') {
       ElMessage.error('删除失败: ' + err.message);
@@ -399,43 +511,86 @@ const handleUploadClick = () => {
 };
 
 /**
- * 处理文件选择 - 使用 WebSocket 实现带进度条的上传
+ * 处理文件选择 - 支持多文件并行上传
  * Electron 环境：直接获取本地文件路径，后端流式读取并上传
  */
-const handleFileUpload = async (event) => {
+const handleFileUpload = (event) => {
   const filesList = Array.from(event.target.files);
   if (filesList.length === 0) return;
 
-  // 逐个上传文件
-  for (const file of filesList) {
-    try {
-      // Electron 环境：file.path 是本地文件的绝对路径
-      // Web 环境无法获取绝对路径，需要用户手动输入或使用其他方式
-      const localPath = file.path || file.name;
-      
-      // 构建远程目标路径
-      const remotePath = currentPath.value === '/'
-        ? `/${file.name}`
-        : `${currentPath.value}/${file.name}`;
+  // 构建上传任务列表
+  const uploadFiles = filesList.map(file => {
+    // Electron 环境：file.path 是本地文件的绝对路径
+    const localPath = file.path || file.name;
+    
+    // 构建远程目标路径
+    const remotePath = currentPath.value === '/'
+      ? `/${file.name}`
+      : `${currentPath.value}/${file.name}`;
 
-      // 使用 WebSocket 上传（带进度条）
-      await startUpload(props.sftp.sessionId.value, localPath, remotePath);
-      
-    } catch (err) {
-      ElMessage.error(`文件 ${file.name} 上传失败: ` + err.message);
-    }
-  }
+    return { localPath, remotePath };
+  });
+
+  // 批量添加上传任务（并行上传）
+  addUploadTasks(props.sftp.sessionId.value, uploadFiles);
   
+  // 清空 input，允许重复选择同一文件
   event.target.value = '';
+};
+
+/**
+ * 拖拽上传相关方法
+ */
+const handleDragOver = (event) => {
+  // 检查是否拖拽的是文件
+  if (event.dataTransfer.types.includes('Files')) {
+    isDragOver.value = true;
+  }
+};
+
+const handleDragLeave = (event) => {
+  // 确保是离开了整个容器
+  const rect = event.currentTarget.getBoundingClientRect();
+  const x = event.clientX;
+  const y = event.clientY;
+  
+  if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+    isDragOver.value = false;
+  }
+};
+
+const handleDrop = (event) => {
+  isDragOver.value = false;
+  
+  const filesList = Array.from(event.dataTransfer.files);
+  if (filesList.length === 0) return;
+
+  // 构建上传任务列表
+  const uploadFiles = filesList.map(file => {
+    // Electron 环境：file.path 是本地文件的绝对路径
+    const localPath = file.path || file.name;
+    
+    // 构建远程目标路径
+    const remotePath = currentPath.value === '/'
+      ? `/${file.name}`
+      : `${currentPath.value}/${file.name}`;
+
+    return { localPath, remotePath };
+  });
+
+  // 批量添加上传任务（并行上传）
+  addUploadTasks(props.sftp.sessionId.value, uploadFiles);
+  
+  ElMessage.success(`已添加 ${filesList.length} 个文件到上传队列`);
 };
 
 /**
  * 上传完成后刷新目录
  */
 const handleUploadDone = () => {
-  resetUpload();
+  clearCompletedTasks();
   refreshDirectory();
-  ElMessage.success('文件上传成功');
+  ElMessage.success('文件上传完成');
 };
 
 const handleCreateDirectory = async () => {
@@ -694,89 +849,50 @@ onMounted(() => {
   min-height: 0;
 }
 
-/* 上传进度条样式 - 极简终端风格 */
-.upload-progress-bar {
-  padding: 12px 16px;
-  background: #f0f7ff;
-  border-bottom: 1px solid #d0e4ff;
+/* 多文件上传进度区域样式 */
+.upload-progress-area {
+  background: #f8f9fa;
+  border-bottom: 1px solid #e0e0e0;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.dark-theme .upload-progress-area {
+  background: rgba(30, 30, 30, 0.9);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.upload-summary {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
+  padding: 10px 16px;
+  border-bottom: 1px solid #e0e0e0;
+  background: #fff;
 }
 
-.dark-theme .upload-progress-bar {
-  background: rgba(0, 50, 100, 0.3);
-  border-bottom: 1px solid rgba(0, 122, 255, 0.3);
+.dark-theme .upload-summary {
+  background: rgba(40, 40, 40, 0.9);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.upload-info {
-  display: flex;
-  flex-direction: column;
-  min-width: 200px;
-  flex: 1;
-}
-
-.upload-filename {
-  font-weight: 500;
+.summary-text {
   font-size: 13px;
+  font-weight: 500;
   color: #303133;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.dark-theme .upload-filename {
+.dark-theme .summary-text {
   color: #e0e0e0;
 }
 
-.upload-size {
-  font-size: 11px;
-  color: #909399;
-  margin-top: 2px;
+.summary-actions {
+  display: flex;
+  gap: 8px;
 }
 
-.dark-theme .upload-size {
-  color: #888;
-}
-
-.progress-track {
-  flex: 2;
-  min-width: 200px;
-  height: 20px;
-  background: #e0e0e0;
-  border-radius: 10px;
-  position: relative;
-  overflow: hidden;
-}
-
-.dark-theme .progress-track {
-  background: #3c3c3c;
-}
-
-.progress-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #4caf50, #8bc34a);
-  border-radius: 10px;
-  transition: width 0.3s ease;
-}
-
-.progress-label {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  font-size: 11px;
-  font-weight: 600;
-  color: #333;
-}
-
-.dark-theme .progress-label {
-  color: #e0e0e0;
-}
-
-.cancel-upload-btn,
-.done-upload-btn {
+.cancel-all-btn,
+.clear-all-btn {
   padding: 4px 12px;
   font-size: 12px;
   border: none;
@@ -785,54 +901,293 @@ onMounted(() => {
   transition: background 0.2s;
 }
 
-.cancel-upload-btn {
+.cancel-all-btn {
   background: #f44336;
   color: #fff;
 }
 
-.cancel-upload-btn:hover {
+.cancel-all-btn:hover {
   background: #d32f2f;
 }
 
-.done-upload-btn {
+.clear-all-btn {
   background: #4caf50;
   color: #fff;
 }
 
-.done-upload-btn:hover {
+.clear-all-btn:hover {
   background: #388e3c;
 }
 
-/* 上传错误提示 */
-.upload-error-bar {
-  padding: 10px 16px;
-  background: #ffebee;
-  border-bottom: 1px solid #ffcdd2;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  font-size: 13px;
-  color: #c62828;
+/* 上传任务列表 */
+.upload-tasks-list {
+  padding: 8px;
 }
 
-.dark-theme .upload-error-bar {
-  background: rgba(100, 30, 30, 0.3);
-  border-bottom: 1px solid rgba(200, 50, 50, 0.3);
+.upload-task-item {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  transition: all 0.2s;
+}
+
+.dark-theme .upload-task-item {
+  background: rgba(50, 50, 50, 0.8);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.upload-task-item:last-child {
+  margin-bottom: 0;
+}
+
+.upload-task-item.completed {
+  border-color: #4caf50;
+}
+
+.upload-task-item.error {
+  border-color: #f44336;
+}
+
+.upload-task-item.cancelled {
+  opacity: 0.6;
+}
+
+.task-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.task-filename {
+  font-size: 13px;
+  font-weight: 500;
+  color: #303133;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 60%;
+}
+
+.dark-theme .task-filename {
+  color: #e0e0e0;
+}
+
+.task-status {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: #e0e0e0;
+  color: #666;
+}
+
+.upload-task-item.uploading .task-status {
+  background: #e3f2fd;
+  color: #1976d2;
+}
+
+.upload-task-item.completed .task-status {
+  background: #e8f5e9;
+  color: #388e3c;
+}
+
+.upload-task-item.error .task-status {
+  background: #ffebee;
+  color: #d32f2f;
+}
+
+.upload-task-item.cancelled .task-status {
+  background: #fff3e0;
+  color: #f57c00;
+}
+
+.dark-theme .task-status {
+  background: rgba(80, 80, 80, 0.8);
+  color: #aaa;
+}
+
+.dark-theme .upload-task-item.uploading .task-status {
+  background: rgba(25, 118, 210, 0.3);
+  color: #64b5f6;
+}
+
+.dark-theme .upload-task-item.completed .task-status {
+  background: rgba(56, 142, 60, 0.3);
+  color: #81c784;
+}
+
+.dark-theme .upload-task-item.error .task-status {
+  background: rgba(211, 47, 47, 0.3);
   color: #ef9a9a;
 }
 
-.retry-upload-btn {
-  padding: 4px 12px;
-  font-size: 12px;
-  background: #ff9800;
-  color: #fff;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
+/* 任务进度条 */
+.task-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
-.retry-upload-btn:hover {
-  background: #f57c00;
+.progress-track-mini {
+  flex: 1;
+  height: 6px;
+  background: #e0e0e0;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.dark-theme .progress-track-mini {
+  background: #3c3c3c;
+}
+
+.progress-fill-mini {
+  height: 100%;
+  background: linear-gradient(90deg, #4caf50, #8bc34a);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.progress-fill-mini.error {
+  background: #f44336;
+}
+
+.progress-fill-mini.cancelled {
+  background: #ff9800;
+}
+
+.progress-percent {
+  font-size: 11px;
+  font-weight: 600;
+  color: #666;
+  min-width: 36px;
+  text-align: right;
+}
+
+.dark-theme .progress-percent {
+  color: #aaa;
+}
+
+.progress-size {
+  font-size: 10px;
+  color: #999;
+  min-width: 100px;
+}
+
+.dark-theme .progress-size {
+  color: #666;
+}
+
+/* 任务操作按钮 */
+.task-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+
+.task-cancel-btn,
+.task-retry-btn {
+  padding: 3px 10px;
+  font-size: 11px;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.task-cancel-btn {
+  background: #f44336;
+  color: #fff;
+}
+
+.task-cancel-btn:hover {
+  background: #d32f2f;
+}
+
+.task-retry-btn {
+  background: #9e9e9e;
+  color: #fff;
+}
+
+.task-retry-btn:hover {
+  background: #757575;
+}
+
+/* 任务错误信息 */
+.task-error {
+  margin-top: 6px;
+  padding: 6px 8px;
+  background: #ffebee;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #c62828;
+}
+
+.dark-theme .task-error {
+  background: rgba(100, 30, 30, 0.5);
+  color: #ef9a9a;
+}
+
+/* 拖拽上传遮罩层 */
+.drag-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(64, 158, 255, 0.15);
+  border: 3px dashed #409eff;
+  border-radius: 8px;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.dark-theme .drag-overlay {
+  background: rgba(0, 122, 255, 0.2);
+  border-color: #007AFF;
+}
+
+.drag-content {
+  text-align: center;
+  padding: 40px;
+}
+
+.drag-icon {
+  font-size: 64px;
+  color: #409eff;
+  margin-bottom: 16px;
+}
+
+.dark-theme .drag-icon {
+  color: #007AFF;
+}
+
+.drag-text {
+  font-size: 20px;
+  font-weight: 600;
+  color: #409eff;
+  margin: 0 0 8px 0;
+}
+
+.dark-theme .drag-text {
+  color: #007AFF;
+}
+
+.drag-hint {
+  font-size: 14px;
+  color: #909399;
+  margin: 0;
+}
+
+.dark-theme .drag-hint {
+  color: #98989d;
+}
+
+.sftp-file-manager.drag-over {
+  position: relative;
 }
 </style>
