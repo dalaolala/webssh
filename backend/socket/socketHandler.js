@@ -8,6 +8,16 @@ const cleanupConnection = (socketId) => {
   const connection = activeConnections.get(socketId);
   if (connection) {
     try {
+      // 移除 socket 事件监听器
+      if (connection.sshInputHandler && global.ioSockets) {
+        const socket = global.ioSockets.get(socketId);
+        if (socket) {
+          socket.off('ssh-input', connection.sshInputHandler);
+          socket.off('resize', connection.resizeHandler);
+        }
+      }
+      
+      // 关闭 SSH 连接
       if (connection.conn) {
         connection.conn.end();
       }
@@ -19,8 +29,12 @@ const cleanupConnection = (socketId) => {
 };
 
 const socketHandler = (io) => {
+  // 存储全局 Socket 引用，用于清理时访问
+  global.ioSockets = new Map();
+  
   io.on('connection', (socket) => {
     console.log('快速连接用户连接:', socket.id);
+    global.ioSockets.set(socket.id, socket);
 
     // 直接认证成功，无需登录
     socket.emit('authenticated', { success: true });
@@ -29,10 +43,6 @@ const socketHandler = (io) => {
     socket.on('quick-connect', (connectionInfo) => {
       // 如果已有旧连接，先清理（防止重连时监听器叠加）
       cleanupConnection(socket.id);
-
-      // 移除可能残留的旧 ssh-input / resize 监听器
-      socket.removeAllListeners('ssh-input');
-      socket.removeAllListeners('resize');
 
       const { host, port, username, password, privateKey } = connectionInfo;
 
@@ -55,27 +65,42 @@ const socketHandler = (io) => {
             return;
           }
 
+          // 创建监听器并保存引用
+          const sshInputHandler = (input) => {
+            stream.write(input);
+          };
+
+          const resizeHandler = (size) => {
+            stream.setWindow(size.rows, size.cols, size.height, size.width);
+          };
+
           stream.on('data', (data) => {
             socket.emit('ssh-data', data.toString());
           });
 
-          socket.on('ssh-input', (input) => {
-            stream.write(input);
-          });
-
-          socket.on('resize', (size) => {
-            stream.setWindow(size.rows, size.cols, size.height, size.width);
-          });
+          // 注册监听器
+          socket.on('ssh-input', sshInputHandler);
+          socket.on('resize', resizeHandler);
 
           stream.on('close', () => {
             socket.emit('ssh-closed');
+            
+            // 移除监听器
+            socket.off('ssh-input', sshInputHandler);
+            socket.off('resize', resizeHandler);
+            
+            // 清理连接
             activeConnections.delete(socket.id);
-            // 清理绑定在当前 stream 上的输入监听器
-            socket.removeAllListeners('ssh-input');
-            socket.removeAllListeners('resize');
           });
 
           socket.sshStream = stream;
+          
+          // 保存监听器引用到连接对象
+          const connection = activeConnections.get(socket.id);
+          if (connection) {
+            connection.sshInputHandler = sshInputHandler;
+            connection.resizeHandler = resizeHandler;
+          }
         });
       });
 
@@ -124,6 +149,7 @@ const socketHandler = (io) => {
     socket.on('disconnect', () => {
       console.log('用户断开连接:', socket.id);
       cleanupConnection(socket.id);
+      global.ioSockets.delete(socket.id);
     });
 
     // 处理错误

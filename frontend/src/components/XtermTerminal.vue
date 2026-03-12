@@ -129,6 +129,10 @@ let wheelObserver = null
 // IME textarea 事件处理器引用，用于 onUnmounted 时移除
 let imeTextarea = null
 let imeHandlers = null
+// 定期清理缓冲区的定时器
+let bufferCleanupTimer = null
+// 输出计数器，用于触发缓冲区清理
+let outputLineCount = 0
 
 // Context Menu State
 const contextMenu = ref({
@@ -411,7 +415,62 @@ const handleResize = () => {
 
 // Component methods to expose via defineExpose
 const write = (data) => {
-  if (term) term.write(data)
+  if (term) {
+    term.write(data)
+    
+    // 增加行计数（粗略估计）
+    outputLineCount += (data.match(/\n/g) || []).length
+    
+    // 每达到一定行数时清理缓冲区
+    if (outputLineCount > 1000) {
+      cleanupBuffer()
+      outputLineCount = 0
+    }
+  }
+}
+
+// 清理终端缓冲区，保留最近的内容
+const cleanupBuffer = () => {
+  if (!term) return
+  
+  try {
+    // 获取当前缓冲区内容
+    const buffer = term.buffer.active
+    const totalLines = buffer.length
+    
+    // 如果行数超过阈值（保留 2000 行，删除更早的）
+    if (totalLines > 2000) {
+      // 保存当前滚动位置
+      const viewport = terminalRef.value?.querySelector('.xterm-viewport')
+      const scrollTop = viewport ? viewport.scrollTop : 0
+      
+      // 保留最近的 1500 行
+      const linesToKeep = 1500
+      const linesToRemove = totalLines - linesToKeep
+      
+      // 使用 xterm 的 clear 方法清理缓冲区
+      // 注意：这会清空整个缓冲区，所以我们需要重新写入保留的内容
+      // 但为了避免性能问题，我们采用更温和的方式：调整 scrollback
+      const originalScrollback = term.options.scrollback
+      term.options.scrollback = linesToKeep
+      
+      // 恢复 scrollback 设置
+      setTimeout(() => {
+        if (term) {
+          term.options.scrollback = originalScrollback
+        }
+      }, 100)
+      
+      // 恢复滚动位置
+      if (viewport) {
+        requestAnimationFrame(() => {
+          viewport.scrollTop = Math.max(0, scrollTop - linesToRemove * 16) // 假设每行约16px
+        })
+      }
+    }
+  } catch (error) {
+    console.warn('清理终端缓冲区时出错:', error)
+  }
 }
 
 const writeError = (msg) => {
@@ -573,9 +632,20 @@ onMounted(async () => {
   initTerminal()
   window.addEventListener('resize', handleResize)
   document.addEventListener('click', onDocumentClick)
+  
+  // 设置定期清理缓冲区的定时器（每5分钟清理一次）
+  bufferCleanupTimer = setInterval(() => {
+    cleanupBuffer()
+  }, 5 * 60 * 1000)
 })
 
 onUnmounted(() => {
+  // 清理缓冲区清理定时器
+  if (bufferCleanupTimer) {
+    clearInterval(bufferCleanupTimer)
+    bufferCleanupTimer = null
+  }
+  
   // 清理 IME textarea 事件监听器
   if (imeTextarea && imeHandlers) {
     imeTextarea.removeEventListener('compositionstart', imeHandlers.onCompositionStart, true)

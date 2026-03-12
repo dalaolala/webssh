@@ -32,6 +32,41 @@ const upload = multer({
 // Key: sessionId -> Value: { handler: SftpHandler, timer: TimeoutId }
 const sftpConnections = new Map();
 
+// 定时器清理函数 - 在进程退出时清理所有定时器
+const cleanupAllTimers = () => {
+    for (const [sessionId, entry] of sftpConnections.entries()) {
+        try {
+            if (entry.timer) {
+                clearTimeout(entry.timer);
+            }
+            if (entry.handler && entry.handler.isConnected) {
+                entry.handler.disconnect();
+            }
+        } catch (error) {
+            console.error(`清理 SFTP 会话 ${sessionId} 时出错:`, error);
+        }
+    }
+    sftpConnections.clear();
+};
+
+// 注册进程退出清理
+process.on('SIGINT', () => {
+    console.log('收到 SIGINT 信号，清理 SFTP 连接...');
+    cleanupAllTimers();
+    process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+    console.log('收到 SIGTERM 信号，清理 SFTP 连接...');
+    cleanupAllTimers();
+    process.exit(0);
+});
+
+process.on('beforeExit', () => {
+    console.log('进程即将退出，清理 SFTP 连接...');
+    cleanupAllTimers();
+});
+
 // 连接SFTP - 快速连接专属（无认证版本）
 router.post('/connect', async (req, res) => {
     try {
@@ -202,6 +237,8 @@ router.get('/file', async (req, res) => {
 
 // 保存文件内容
 router.post('/file', async (req, res) => {
+    let tempPath = null;
+    
     try {
         const { sessionId, path, content } = req.body;
 
@@ -218,11 +255,10 @@ router.post('/file', async (req, res) => {
         const os = require('os');
         const pathModule = require('path');
 
-        const tempPath = pathModule.join(os.tmpdir(), `sftp_quick_edit_${Date.now()}.tmp`);
+        tempPath = pathModule.join(os.tmpdir(), `sftp_quick_edit_${Date.now()}.tmp`);
         fs.writeFileSync(tempPath, content, 'utf8');
 
         await sftpHandler.uploadFile(tempPath, path);
-        fs.unlinkSync(tempPath);
 
         res.json({
             success: true,
@@ -234,6 +270,15 @@ router.post('/file', async (req, res) => {
             success: false,
             message: '保存文件失败: ' + error.message
         });
+    } finally {
+        // 确保临时文件被清理
+        if (tempPath && fs.existsSync(tempPath)) {
+            try {
+                fs.unlinkSync(tempPath);
+            } catch (cleanupError) {
+                console.error('清理临时文件失败:', cleanupError);
+            }
+        }
     }
 });
 
@@ -328,6 +373,8 @@ router.post('/rename', async (req, res) => {
 
 // 文件上传
 router.post('/upload', upload.single('file'), async (req, res) => {
+    const tempFilePath = req.file ? req.file.path : null;
+    
     try {
         const { sessionId, path: remotePath } = req.body;
 
@@ -339,8 +386,6 @@ router.post('/upload', upload.single('file'), async (req, res) => {
         }
 
         if (!sessionId || !remotePath) {
-            // 清理临时文件
-            fs.unlinkSync(req.file.path);
             return res.status(400).json({
                 success: false,
                 message: '会话ID和路径不能为空'
@@ -349,9 +394,6 @@ router.post('/upload', upload.single('file'), async (req, res) => {
 
         const sftpHandler = getQuickSftpConnection(sessionId);
         await sftpHandler.uploadFile(req.file.path, remotePath);
-
-        // 清理临时文件
-        fs.unlinkSync(req.file.path);
 
         res.json({
             success: true,
@@ -363,20 +405,26 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     } catch (error) {
         console.error('快速文件上传错误:', error);
 
-        // 清理临时文件
-        if (req.file && fs.existsSync(req.file.path)) {
-            fs.unlinkSync(req.file.path);
-        }
-
         res.status(500).json({
             success: false,
             message: '文件上传失败: ' + error.message
         });
+    } finally {
+        // 确保临时文件被清理
+        if (tempFilePath && fs.existsSync(tempFilePath)) {
+            try {
+                fs.unlinkSync(tempFilePath);
+            } catch (cleanupError) {
+                console.error('清理临时文件失败:', cleanupError);
+            }
+        }
     }
 });
 
 // 文件下载
 router.get('/download', async (req, res) => {
+    let tempFilePath = null;
+    
     try {
         const { sessionId, path: remotePath } = req.query;
 
@@ -393,7 +441,7 @@ router.get('/download', async (req, res) => {
             fs.mkdirSync(tempDir, { recursive: true });
         }
 
-        const tempFilePath = path.join(tempDir, `download_${Date.now()}_${path.basename(remotePath)}`);
+        tempFilePath = path.join(tempDir, `download_${Date.now()}_${path.basename(remotePath)}`);
 
         const sftpHandler = getQuickSftpConnection(sessionId);
         await sftpHandler.downloadFile(remotePath, tempFilePath);
@@ -409,19 +457,38 @@ router.get('/download', async (req, res) => {
 
         // 文件传输完成后清理临时文件
         fileStream.on('end', () => {
-            if (fs.existsSync(tempFilePath)) {
-                fs.unlinkSync(tempFilePath);
+            if (tempFilePath && fs.existsSync(tempFilePath)) {
+                try {
+                    fs.unlinkSync(tempFilePath);
+                } catch (cleanupError) {
+                    console.error('清理临时文件失败:', cleanupError);
+                }
             }
         });
 
-        fileStream.on('error', () => {
-            if (fs.existsSync(tempFilePath)) {
-                fs.unlinkSync(tempFilePath);
+        fileStream.on('error', (error) => {
+            console.error('文件流错误:', error);
+            if (tempFilePath && fs.existsSync(tempFilePath)) {
+                try {
+                    fs.unlinkSync(tempFilePath);
+                } catch (cleanupError) {
+                    console.error('清理临时文件失败:', cleanupError);
+                }
             }
         });
 
     } catch (error) {
         console.error('快速文件下载错误:', error);
+        
+        // 清理临时文件
+        if (tempFilePath && fs.existsSync(tempFilePath)) {
+            try {
+                fs.unlinkSync(tempFilePath);
+            } catch (cleanupError) {
+                console.error('清理临时文件失败:', cleanupError);
+            }
+        }
+        
         res.status(500).json({
             success: false,
             message: '文件下载失败: ' + error.message

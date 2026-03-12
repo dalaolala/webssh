@@ -137,8 +137,25 @@ const injectCommand = (cmd) => {
 }
 
 let socket = null
-let pingInterval = null
 let resizeTimer = null   // 用于 clearTimeout 防止组件卸载后仍执行
+
+// 清理 Socket 连接和事件监听器
+const cleanupSocket = () => {
+  if (socket) {
+    // 移除所有事件监听器
+    socket.off('connect')
+    socket.off('connect_error')
+    socket.off('ssh-connected')
+    socket.off('ssh-data')
+    socket.off('ssh-error')
+    socket.off('ssh-closed')
+    socket.off('disconnect')
+    
+    // 断开连接
+    socket.disconnect()
+    socket = null
+  }
+}
 
 // 本地连接状态
 const isConnected = ref(false)
@@ -290,10 +307,7 @@ const reconnect = () => {
   }
   
   // 清理之前的连接
-  if (socket) {
-    socket.disconnect()
-    socket = null
-  }
+  cleanupSocket()
   
   // 重置状态
   isConnected.value = false
@@ -320,18 +334,12 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  if (pingInterval) {
-    clearInterval(pingInterval)
-  }
-
+  // 清理定时器
   clearTimeout(resizeTimer)
   resizeTimer = null
   
   // 销毁组件内部的 Socket 连接
-  if (socket) {
-    socket.disconnect()
-    socket = null
-  }
+  cleanupSocket()
 
   // 断开独立的 SFTP
   if (quickSftp.isConnected.value) {
