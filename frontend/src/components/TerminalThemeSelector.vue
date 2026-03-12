@@ -2,13 +2,8 @@
   <div class="terminal-theme-selector" ref="rootRef">
     <!-- 触发按钮 -->
     <button class="appearance-btn" :class="{ active: visible }" @click="toggle" aria-label="终端外观">
-      <svg viewBox="0 0 16 16" fill="currentColor" width="13" height="13">
-        <path d="M8 1a.5.5 0 01.5.5v1a.5.5 0 01-1 0v-1A.5.5 0 018 1zm0 9a2 2 0 100-4 2 2 0 000 4zm0-5.5a3.5 3.5 0 110 7 3.5 3.5 0 010-7zM8 0a8 8 0 100 16A8 8 0 008 0zm0 1.5a6.5 6.5 0 110 13 6.5 6.5 0 010-13z" opacity="0"/>
-        <path d="M6 1H4a1 1 0 00-1 1v1H2a1 1 0 00-1 1v8a1 1 0 001 1h12a1 1 0 001-1V4a1 1 0 00-1-1h-1V2a1 1 0 00-1-1H6zm0 1h4v1H6V2zM2 4h12v8H2V4zm3 2a1 1 0 100 2 1 1 0 000-2zm3 0a1 1 0 100 2 1 1 0 000-2zm3 0a1 1 0 100 2 1 1 0 000-2z" opacity="0"/>
-        <!-- 画笔/外观图标 -->
-        <path d="M12.146.146a.5.5 0 01.708 0l3 3a.5.5 0 010 .708l-10 10a.5.5 0 01-.168.11l-5 2a.5.5 0 01-.65-.65l2-5a.5.5 0 01.11-.168l10-10zM11.207 2.5L13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 01.5.5v.5h.5a.5.5 0 01.5.5v.5h.293l6.5-6.5zm-9.761 5.175l-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 015 12.5V12h-.5a.5.5 0 01-.5-.5V11h-.5a.5.5 0 01-.468-.325z"/>
-      </svg>
-      <span class="appearance-btn-label">外观</span>
+      <el-icon><Setting /></el-icon>
+      <span>外观</span>
     </button>
 
     <!-- 浮层面板 -->
@@ -111,6 +106,7 @@
 
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { Setting } from '@element-plus/icons-vue'
 import { useTerminalThemeStore } from '@/stores/terminalTheme'
 
 const terminalThemeStore = useTerminalThemeStore()
@@ -139,28 +135,31 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onClickOutside))
 .appearance-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  height: 22px;
-  padding: 0 8px;
-  border: none;
-  border-radius: 5px;
-  background: transparent;
-  color: rgba(255,255,255,0.55);
-  font-size: 11px;
-  font-weight: 500;
+  gap: 4px;
+  padding: 2px 10px;
+  border-radius: 6px;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-  letter-spacing: 0.1px;
+  transition: all 0.2s ease;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 11px;
 }
 
 .appearance-btn:hover {
-  background: rgba(255,255,255,0.1);
-  color: rgba(255,255,255,0.85);
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
 }
 
 .appearance-btn.active {
-  background: rgba(255,255,255,0.14);
-  color: #fff;
+  background: rgba(0, 122, 255, 0.15);
+  border-color: rgba(0, 122, 255, 0.3);
+  color: #0a84ff;
+  font-weight: 500;
+}
+
+.appearance-btn .el-icon {
+  font-size: 13px;
 }
 
 /* 面板 */
