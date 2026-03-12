@@ -2,6 +2,9 @@ import { ref } from 'vue';
 import axios from 'axios';
 import { encryptPayload } from '../utils/crypto';
 
+// 心跳间隔（毫秒）- 每2分钟发送一次心跳
+const HEARTBEAT_INTERVAL = 2 * 60 * 1000;
+
 // 这是一个组合式函数(Composable)而不是全局 Pinia Store
 // 这样每次调用 useQuickSftp() 都会生成完全独立的响应式状态，非常适合多标签页互不干扰。
 export function useQuickSftp() {
@@ -12,6 +15,35 @@ export function useQuickSftp() {
     const loading = ref(false);
     const error = ref(null);
     const selectedFiles = ref(new Set());
+
+    // 心跳定时器
+    let heartbeatTimer = null;
+
+    // 发送心跳
+    const sendHeartbeat = async () => {
+        if (!sessionId.value) return;
+        try {
+            await axios.post('/api/sftp/quick/heartbeat', {
+                sessionId: sessionId.value
+            });
+        } catch (err) {
+            console.warn('SFTP 心跳发送失败:', err.message);
+        }
+    };
+
+    // 启动心跳
+    const startHeartbeat = () => {
+        stopHeartbeat();
+        heartbeatTimer = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL);
+    };
+
+    // 停止心跳
+    const stopHeartbeat = () => {
+        if (heartbeatTimer) {
+            clearInterval(heartbeatTimer);
+            heartbeatTimer = null;
+        }
+    };
 
     // 连接 SFTP
     const connectSftp = async (connectionInfo) => {
@@ -36,6 +68,8 @@ export function useQuickSftp() {
                 sessionId.value = response.data.sessionId;
                 currentPath.value = response.data.currentPath;
                 files.value = response.data.files;
+                // 连接成功后启动心跳
+                startHeartbeat();
                 return true;
             } else {
                 throw new Error(response.data.message);
@@ -50,6 +84,8 @@ export function useQuickSftp() {
 
     // 断开 SFTP 连接
     const disconnectSftp = async () => {
+        // 先停止心跳
+        stopHeartbeat();
         try {
             if (sessionId.value) {
                 await axios.post('/api/sftp/quick/disconnect', {
@@ -303,6 +339,7 @@ export function useQuickSftp() {
 
         connectSftp,
         disconnectSftp,
+        stopHeartbeat,
         listDirectory,
         enterDirectory,
         goToParentDirectory,

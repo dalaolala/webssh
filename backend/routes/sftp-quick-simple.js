@@ -29,16 +29,37 @@ const upload = multer({
 });
 
 // 存储活跃的SFTP连接
-// Key: sessionId -> Value: { handler: SftpHandler, timer: TimeoutId }
+// Key: sessionId -> Value: { handler: SftpHandler, lastHeartbeat: timestamp }
 const sftpConnections = new Map();
 
-// 定时器清理函数 - 在进程退出时清理所有定时器
-const cleanupAllTimers = () => {
+// 心跳超时时间（毫秒）- 超过此时间没有心跳则清理连接
+const HEARTBEAT_TIMEOUT = 5 * 60 * 1000; // 5分钟
+// 心跳检查间隔
+const HEARTBEAT_CHECK_INTERVAL = 60 * 1000; // 1分钟检查一次
+
+// 定期检查并清理超时的连接
+const heartbeatChecker = setInterval(() => {
+    const now = Date.now();
+    for (const [sessionId, entry] of sftpConnections.entries()) {
+        if (now - entry.lastHeartbeat > HEARTBEAT_TIMEOUT) {
+            console.log(`SFTP 会话 ${sessionId} 心跳超时，自动清理`);
+            try {
+                if (entry.handler && entry.handler.isConnected) {
+                    entry.handler.disconnect();
+                }
+            } catch (e) {
+                console.error(`断开 SFTP 会话 ${sessionId} 时出错:`, e);
+            }
+            sftpConnections.delete(sessionId);
+        }
+    }
+}, HEARTBEAT_CHECK_INTERVAL);
+
+// 清理所有连接 - 在进程退出时调用
+const cleanupAllConnections = () => {
+    clearInterval(heartbeatChecker);
     for (const [sessionId, entry] of sftpConnections.entries()) {
         try {
-            if (entry.timer) {
-                clearTimeout(entry.timer);
-            }
             if (entry.handler && entry.handler.isConnected) {
                 entry.handler.disconnect();
             }
@@ -52,19 +73,19 @@ const cleanupAllTimers = () => {
 // 注册进程退出清理
 process.on('SIGINT', () => {
     console.log('收到 SIGINT 信号，清理 SFTP 连接...');
-    cleanupAllTimers();
+    cleanupAllConnections();
     process.exit(0);
 });
 
 process.on('SIGTERM', () => {
     console.log('收到 SIGTERM 信号，清理 SFTP 连接...');
-    cleanupAllTimers();
+    cleanupAllConnections();
     process.exit(0);
 });
 
 process.on('beforeExit', () => {
     console.log('进程即将退出，清理 SFTP 连接...');
-    cleanupAllTimers();
+    cleanupAllConnections();
 });
 
 // 连接SFTP - 快速连接专属（无认证版本）
@@ -107,17 +128,10 @@ router.post('/connect', async (req, res) => {
 
         // 生成隔离的 sessionId
         const sessionId = crypto.randomUUID();
-
-        // 设置定时器自动断开连接（10分钟无活动），保存引用以便提前取消
-        const timer = setTimeout(() => {
-            const entry = sftpConnections.get(sessionId);
-            if (entry) {
-                entry.handler.disconnect();
-                sftpConnections.delete(sessionId);
-            }
-        }, 10 * 60 * 1000);
-
-        sftpConnections.set(sessionId, { handler: sftpHandler, timer });
+        sftpConnections.set(sessionId, {
+            handler: sftpHandler,
+            lastHeartbeat: Date.now()
+        });
 
         // 获取根目录列表
         const files = await sftpHandler.listDirectory('.');
@@ -138,7 +152,7 @@ router.post('/connect', async (req, res) => {
     }
 });
 
-// 获取已存在的连接
+// 获取已存在的连接（同时更新心跳时间）
 function getQuickSftpConnection(sessionId) {
     if (!sessionId) {
         throw new Error('未提供 sessionId');
@@ -151,10 +165,12 @@ function getQuickSftpConnection(sessionId) {
     const entry = sftpConnections.get(sessionId);
     const connection = entry.handler;
     if (!connection || !connection.isConnected) {
-        clearTimeout(entry.timer);
         sftpConnections.delete(sessionId);
         throw new Error('SFTP连接已断开，请重新连接');
     }
+
+    // 更新心跳时间
+    entry.lastHeartbeat = Date.now();
 
     return connection;
 }
@@ -166,7 +182,6 @@ router.post('/disconnect', async (req, res) => {
 
         if (sessionId && sftpConnections.has(sessionId)) {
             const entry = sftpConnections.get(sessionId);
-            clearTimeout(entry.timer);
             await entry.handler.disconnect();
             sftpConnections.delete(sessionId);
         }
@@ -182,6 +197,26 @@ router.post('/disconnect', async (req, res) => {
             message: '断开连接失败: ' + error.message
         });
     }
+});
+
+// 心跳接口 - 前端定期调用以保持连接活跃
+router.post('/heartbeat', (req, res) => {
+    const { sessionId } = req.body;
+
+    if (!sessionId || !sftpConnections.has(sessionId)) {
+        return res.json({
+            success: false,
+            message: '会话不存在'
+        });
+    }
+
+    const entry = sftpConnections.get(sessionId);
+    entry.lastHeartbeat = Date.now();
+
+    res.json({
+        success: true,
+        message: '心跳更新成功'
+    });
 });
 
 // 列出目录内容
