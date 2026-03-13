@@ -189,34 +189,75 @@
       </div>
     </el-drawer>
 
-    <!-- 新建/编辑片段弹窗 -->
-    <el-dialog
-      v-model="showSnippetDialog"
-      :title="editingSnippet?.id ? '编辑片段' : '新建片段'"
-      width="420px"
-      append-to-body
-      destroy-on-close
-      class="cmd-dialog"
-    >
-      <el-form ref="snippetFormRef" :model="snippetForm" :rules="snippetRules" label-width="80px">
-        <el-form-item label="片段名称" prop="name">
-          <el-input v-model="snippetForm.name" placeholder="输入一个简短的名称" />
-        </el-form-item>
-        <el-form-item label="命令内容" prop="command">
-          <el-input
-            v-model="snippetForm.command"
-            type="textarea"
-            :rows="6"
-            placeholder="输入 Linux 命令或 Shell 脚本，支持多行"
-            style="font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 13px;"
-          />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="showSnippetDialog = false">取消</el-button>
-        <el-button type="primary" @click="saveSnippet">保存</el-button>
-      </template>
-    </el-dialog>
+    <!-- 新建/编辑片段弹窗（自定义暗色） -->
+    <Teleport to="body">
+      <Transition name="snip-dialog">
+        <div v-if="showSnippetDialog" class="snip-mask" @mousedown.self="showSnippetDialog = false">
+          <div class="snip-dialog">
+            <!-- 头部 -->
+            <div class="snip-header">
+              <div class="snip-header-left">
+                <div class="snip-header-icon">
+                  <svg viewBox="0 0 14 14" fill="none" width="13" height="13">
+                    <path d="M2 3h10M2 7h6M2 11h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+                    <path d="M10 9l1.5 1.5L13 8" stroke="#a6e3a1" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </div>
+                <span class="snip-header-title">{{ editingSnippet?.id ? '编辑片段' : '新建片段' }}</span>
+              </div>
+              <button class="snip-close" @click="showSnippetDialog = false">
+                <svg viewBox="0 0 10 10" fill="none" width="10" height="10">
+                  <path d="M2.5 2.5l5 5M7.5 2.5l-5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+                </svg>
+              </button>
+            </div>
+
+            <!-- 表单区 -->
+            <div class="snip-body">
+              <!-- 片段名称 -->
+              <div class="snip-field" :class="{ 'snip-field--error': errors.name }">
+                <label class="snip-label">片段名称</label>
+                <input
+                  v-model="snippetForm.name"
+                  class="snip-input"
+                  placeholder="输入一个简短的名称…"
+                  @input="errors.name = ''"
+                  @keydown.enter="saveSnippet"
+                />
+                <span v-if="errors.name" class="snip-error-msg">{{ errors.name }}</span>
+              </div>
+
+              <!-- 命令内容 -->
+              <div class="snip-field" :class="{ 'snip-field--error': errors.command }">
+                <div class="snip-label-row">
+                  <label class="snip-label">命令内容</label>
+                  <span class="snip-label-hint">支持多行 Shell 脚本</span>
+                </div>
+                <textarea
+                  v-model="snippetForm.command"
+                  class="snip-textarea"
+                  placeholder="输入 Linux 命令或 Shell 脚本…"
+                  rows="7"
+                  @input="errors.command = ''"
+                ></textarea>
+                <span v-if="errors.command" class="snip-error-msg">{{ errors.command }}</span>
+              </div>
+            </div>
+
+            <!-- 底部按钮 -->
+            <div class="snip-footer">
+              <button class="snip-btn snip-btn-cancel" @click="showSnippetDialog = false">取消</button>
+              <button class="snip-btn snip-btn-save" @click="saveSnippet">
+                <svg viewBox="0 0 12 12" fill="none" width="11" height="11">
+                  <path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                保存
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -261,14 +302,10 @@ const toggleCategory = (index) => {
 const PRIVATE_SNIPPETS_KEY = 'webssh_private_snippets'
 const privateSnippets = ref(JSON.parse(localStorage.getItem(PRIVATE_SNIPPETS_KEY) || '[]'))
 const showSnippetDialog = ref(false)
-const snippetFormRef = ref(null)
 const editingSnippet = ref(null)
 const snippetFileInput = ref(null)
 const snippetForm = ref({ name: '', command: '' })
-const snippetRules = {
-  name: [{ required: true, message: '请输入片段名称', trigger: 'blur' }],
-  command: [{ required: true, message: '请输入命令内容', trigger: 'blur' }]
-}
+const errors = reactive({ name: '', command: '' })
 
 const savePrivateSnippets = () => {
   localStorage.setItem(PRIVATE_SNIPPETS_KEY, JSON.stringify(privateSnippets.value))
@@ -314,22 +351,24 @@ const copyCommand = async (cmd) => {
 const openSnippetDialog = (snippet = null) => {
   editingSnippet.value = snippet
   snippetForm.value = snippet ? { ...snippet } : { name: '', command: '' }
+  errors.name = ''
+  errors.command = ''
   showSnippetDialog.value = true
 }
 
 const saveSnippet = () => {
-  snippetFormRef.value.validate((valid) => {
-    if (!valid) return
-    if (editingSnippet.value?.id) {
-      const index = privateSnippets.value.findIndex(s => s.id === editingSnippet.value.id)
-      if (index > -1) privateSnippets.value[index] = { ...editingSnippet.value, ...snippetForm.value }
-    } else {
-      privateSnippets.value.unshift({ id: Date.now(), ...snippetForm.value })
-    }
-    savePrivateSnippets()
-    showSnippetDialog.value = false
-    ElMessage.success('已保存')
-  })
+  errors.name = snippetForm.value.name.trim() ? '' : '请输入片段名称'
+  errors.command = snippetForm.value.command.trim() ? '' : '请输入命令内容'
+  if (errors.name || errors.command) return
+  if (editingSnippet.value?.id) {
+    const index = privateSnippets.value.findIndex(s => s.id === editingSnippet.value.id)
+    if (index > -1) privateSnippets.value[index] = { ...editingSnippet.value, ...snippetForm.value }
+  } else {
+    privateSnippets.value.unshift({ id: Date.now(), ...snippetForm.value })
+  }
+  savePrivateSnippets()
+  showSnippetDialog.value = false
+  ElMessage.success('已保存')
 }
 
 const deleteSnippet = (snippet) => {
@@ -866,4 +905,227 @@ const importSnippets = (e) => {
   gap: 6px;
   flex-shrink: 0;
 }
+
+/* ===== 片段弹窗 ===== */
+.snip-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.snip-dialog {
+  width: 420px;
+  background: #1e1e2e;
+  border: 1px solid #313244;
+  border-radius: 12px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6), 0 4px 16px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+}
+
+.snip-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 13px;
+  border-bottom: 1px solid #313244;
+  background: #181825;
+}
+
+.snip-header-left {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.snip-header-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: #252536;
+  border: 1px solid #313244;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #89b4fa;
+  flex-shrink: 0;
+}
+
+.snip-header-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #cdd6f4;
+  letter-spacing: 0.2px;
+}
+
+.snip-close {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #45475a;
+  transition: background 0.15s, color 0.15s;
+  padding: 0;
+}
+.snip-close:hover {
+  background: #313244;
+  color: #cdd6f4;
+}
+
+.snip-body {
+  padding: 18px 18px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.snip-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.snip-label-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.snip-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #9399b2;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.snip-label-hint {
+  font-size: 11px;
+  color: #45475a;
+}
+
+.snip-input {
+  width: 100%;
+  height: 36px;
+  background: #11111b;
+  border: 1px solid #313244;
+  border-radius: 7px;
+  padding: 0 11px;
+  font-size: 13px;
+  color: #cdd6f4;
+  font-family: inherit;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.snip-input::placeholder { color: #45475a; }
+.snip-input:focus {
+  border-color: #89b4fa;
+  box-shadow: 0 0 0 3px rgba(137, 180, 250, 0.12);
+}
+
+.snip-field--error .snip-input,
+.snip-field--error .snip-textarea {
+  border-color: #f38ba8;
+  box-shadow: 0 0 0 3px rgba(243, 139, 168, 0.1);
+}
+
+.snip-error-msg {
+  font-size: 11.5px;
+  color: #f38ba8;
+}
+
+.snip-textarea {
+  width: 100%;
+  background: #11111b;
+  border: 1px solid #313244;
+  border-radius: 7px;
+  padding: 10px 11px;
+  font-size: 12.5px;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+  color: #f9e2af;
+  line-height: 1.65;
+  resize: vertical;
+  min-height: 130px;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  scrollbar-width: thin;
+  scrollbar-color: #313244 transparent;
+}
+.snip-textarea::placeholder { color: #45475a; font-family: inherit; }
+.snip-textarea:focus {
+  border-color: #89b4fa;
+  box-shadow: 0 0 0 3px rgba(137, 180, 250, 0.12);
+}
+.snip-textarea::-webkit-scrollbar { width: 4px; }
+.snip-textarea::-webkit-scrollbar-thumb { background: #313244; border-radius: 2px; }
+
+.snip-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 18px 16px;
+  border-top: 1px solid #252536;
+}
+
+.snip-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  border-radius: 7px;
+  padding: 6px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s, color 0.15s;
+}
+
+.snip-btn-cancel {
+  background: #313244;
+  color: #9399b2;
+}
+.snip-btn-cancel:hover {
+  background: #45475a;
+  color: #cdd6f4;
+}
+
+.snip-btn-save {
+  background: #1e3a5f;
+  color: #89b4fa;
+  border: 1px solid rgba(137, 180, 250, 0.2);
+}
+.snip-btn-save:hover {
+  background: #89b4fa;
+  color: #1e1e2e;
+}
+
+.snip-dialog-enter-active {
+  transition: opacity 0.18s ease, transform 0.2s cubic-bezier(0.34, 1.5, 0.64, 1);
+}
+.snip-dialog-leave-active {
+  transition: opacity 0.14s ease, transform 0.14s ease;
+}
+.snip-dialog-enter-from,
+.snip-dialog-leave-to {
+  opacity: 0;
+  transform: scale(0.94) translateY(8px);
+}
 </style>
+
