@@ -10,6 +10,7 @@
     <!-- 右键菜单 -->
     <div 
       v-if="contextMenu.visible" 
+      ref="contextMenuRef"
       class="context-menu" 
       :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
       @mouseleave="hideContextMenu"
@@ -510,12 +511,83 @@ const scrollToBottom = () => {
 }
 
 // ------ Context Menu Methods ------
+const contextMenuRef = ref(null)
+
 const showContextMenu = (event) => {
   event.preventDefault()
+  
+  // 获取终端容器的边界
+  const containerRect = terminalRef.value?.getBoundingClientRect()
+  if (!containerRect) {
+    contextMenu.value = {
+      visible: true,
+      x: event.clientX,
+      y: event.clientY
+    }
+    return
+  }
+  
+  // 计算鼠标在终端中的相对位置
+  const relativeY = event.clientY - containerRect.top
+  const relativeX = event.clientX - containerRect.left
+  const containerHeight = containerRect.height
+  const containerWidth = containerRect.width
+  const isUpperHalf = relativeY < containerHeight / 2
+  const isLeftHalf = relativeX < containerWidth / 2
+  
+  // 预估菜单尺寸
+  // 菜单宽度：min-width 140px + padding
+  const menuWidth = 160
+  // 菜单高度（根据菜单项数量）
+  // 每个菜单项约 28px，分隔线约 13px，上下 padding 各 6px
+  // 正常情况：复制、粘贴、全选、清屏 = 4项 + 3分隔线 = 约 151px
+  // 断开连接且有重连：5项 + 4分隔线 = 约 192px
+  const menuHeight = props.onReconnect && !props.isConnected ? 192 : 151
+  
+  // 计算菜单 Y 位置
+  let menuY = event.clientY
+  if (isUpperHalf) {
+    // 鼠标在上半部分，菜单显示在鼠标下方
+    menuY = event.clientY
+  } else {
+    // 鼠标在下半部分，菜单显示在鼠标上方
+    menuY = event.clientY - menuHeight
+  }
+  
+  // 计算菜单 X 位置
+  let menuX = event.clientX
+  if (isLeftHalf) {
+    // 鼠标在左半部分，菜单显示在鼠标右侧
+    menuX = event.clientX
+  } else {
+    // 鼠标在右半部分，菜单显示在鼠标左侧
+    menuX = event.clientX - menuWidth
+  }
+  
+  // 确保菜单不超出视口
+  const viewportWidth = window.innerWidth
+  const viewportHeight = window.innerHeight
+  
+  // Y 方向边界检测
+  if (menuY + menuHeight > viewportHeight) {
+    menuY = viewportHeight - menuHeight - 10
+  }
+  if (menuY < 10) {
+    menuY = 10
+  }
+  
+  // X 方向边界检测
+  if (menuX + menuWidth > viewportWidth) {
+    menuX = viewportWidth - menuWidth - 10
+  }
+  if (menuX < 10) {
+    menuX = 10
+  }
+  
   contextMenu.value = {
     visible: true,
-    x: event.clientX,
-    y: event.clientY
+    x: menuX,
+    y: menuY
   }
 }
 
