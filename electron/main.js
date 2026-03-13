@@ -160,6 +160,108 @@ function startBackend(port = 3000) {
   });
 }
 
+// 启动 Loading 页面 HTML
+const loadingHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>WebSSH</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: white;
+    }
+    .logo {
+      width: 80px;
+      height: 80px;
+      background: rgba(255,255,255,0.2);
+      border-radius: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 36px;
+      margin-bottom: 24px;
+      animation: pulse 2s ease-in-out infinite;
+    }
+    .title {
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      letter-spacing: -0.5px;
+    }
+    .subtitle {
+      font-size: 14px;
+      opacity: 0.8;
+      margin-bottom: 32px;
+    }
+    .spinner {
+      width: 32px;
+      height: 32px;
+      border: 3px solid rgba(255,255,255,0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+    }
+  </style>
+</head>
+<body>
+  <div class="logo">⚡</div>
+  <div class="title">WebSSH</div>
+  <div class="subtitle">正在启动...</div>
+  <div class="spinner"></div>
+</body>
+</html>
+`;
+
+// 检查后端服务是否就绪
+function checkBackendReady(port, maxRetries = 30, interval = 100) {
+  return new Promise((resolve) => {
+    const http = require('http');
+    let retries = 0;
+
+    const check = () => {
+      const req = http.get(`http://localhost:${port}/api/crypto/public-key`, (res) => {
+        if (res.statusCode === 200) {
+          resolve(true);
+        } else {
+          retry();
+        }
+      });
+      req.on('error', retry);
+      req.setTimeout(500, () => {
+        req.destroy();
+        retry();
+      });
+    };
+
+    const retry = () => {
+      retries++;
+      if (retries >= maxRetries) {
+        resolve(false);
+      } else {
+        setTimeout(check, interval);
+      }
+    };
+
+    check();
+  });
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -168,6 +270,8 @@ function createWindow() {
     minHeight: 700,
     center: true,
     resizable: true,
+    backgroundColor: '#667eea',
+    show: false,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -178,6 +282,12 @@ function createWindow() {
   // 隐藏菜单栏
   Menu.setApplicationMenu(null);
 
+  // 立即显示 Loading 页面
+  mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(loadingHtml)}`);
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+  });
+
   // 检查端口是否被占用，并自动选择可用端口
   getAvailablePort().then(async (availablePort) => {
     if (availablePort) {
@@ -185,8 +295,25 @@ function createWindow() {
       console.log('正在启动后端服务器...');
       backendServer = await startBackend(availablePort);
 
-      // 等待后端完全启动
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // 等待后端服务就绪（健康检查）
+      console.log('等待后端服务就绪...');
+      const isReady = await checkBackendReady(availablePort);
+      
+      if (!isReady) {
+        console.error('后端服务启动超时');
+        const errorHtml = `
+          <html>
+            <head><title>启动超时</title></head>
+            <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+              <h1 style="color: #f56c6c;">启动超时</h1>
+              <p>后端服务启动超时，请重试。</p>
+              <button onclick="window.close()" style="padding: 10px 20px; background: #f56c6c; color: white; border: none; border-radius: 4px; cursor: pointer;">关闭</button>
+            </body>
+          </html>
+        `;
+        mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(errorHtml)}`);
+        return;
+      }
 
       // 加载前端应用
       console.log('正在加载前端应用...');
