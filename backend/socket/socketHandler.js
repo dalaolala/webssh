@@ -13,6 +13,12 @@ const pendingCancels = new Set();
 // 存储上传断点信息（用于断点续传）
 const uploadResumables = new Map();
 
+// 存储用户确认覆盖的文件路径（临时）
+const confirmedOverwrites = new Set();
+
+// 上传任务 ID 计数器（确保唯一性）
+let uploadIdCounter = 0;
+
 // 定期清理过期的预取消请求（每5分钟清理一次）
 setInterval(() => {
   // pendingCancels 是 Set，存储的是 localPath
@@ -204,7 +210,8 @@ const socketHandler = (io) => {
      */
     socket.on('sftp-upload-start', async (data) => {
       const { sessionId, localPath, remotePath, resume = true } = data;
-      const uploadId = `${socket.id}-${Date.now()}`;
+      // 使用计数器确保 uploadId 唯一，避免多文件同时上传时冲突
+      const uploadId = `${socket.id}-${Date.now()}-${++uploadIdCounter}`;
 
       try {
         // 验证参数
@@ -263,10 +270,36 @@ const socketHandler = (io) => {
         if (resume) {
           try {
             const remoteSize = await sftpHandler.getRemoteFileSize(remotePath);
-            // 只有当远程文件小于本地文件时才续传
-            if (remoteSize > 0 && remoteSize < stats.size) {
-              startPosition = remoteSize;
-              console.log(`断点续传: ${localPath} 从 ${startPosition} 字节开始`);
+            
+            // 远程文件存在
+            if (remoteSize > 0) {
+              // 远程文件大小 >= 本地文件大小，需要用户确认是否覆盖
+              if (remoteSize >= stats.size) {
+                // 检查是否已经确认覆盖
+                if (!confirmedOverwrites.has(remotePath)) {
+                  // 发送冲突事件，等待用户确认
+                  socket.emit('sftp-upload-conflict', {
+                    uploadId,
+                    localPath,
+                    remotePath,
+                    localSize: stats.size,
+                    remoteSize: remoteSize,
+                    fileName: localPath.split(/[/\\]/).pop()
+                  });
+                  
+                  // 清理任务
+                  activeUploads.delete(uploadId);
+                  return;
+                }
+                
+                // 已确认覆盖，移除确认标记
+                confirmedOverwrites.delete(remotePath);
+                console.log(`用户确认覆盖: ${remotePath}`);
+              } else {
+                // 远程文件小于本地文件，断点续传
+                startPosition = remoteSize;
+                console.log(`断点续传: ${localPath} 从 ${startPosition} 字节开始`);
+              }
             }
           } catch (err) {
             // 获取远程文件大小失败，从头开始上传
@@ -304,13 +337,15 @@ const socketHandler = (io) => {
             return false;
           }
 
-          // 推送进度事件
-          socket.emit('sftp-upload-progress', {
-            uploadId,
-            loaded: progress.loaded,
-            total: progress.total,
-            percent: progress.percent
-          });
+          // 只在非检查模式下推送进度事件（避免频繁发送）
+          if (!progress.checkOnly) {
+            socket.emit('sftp-upload-progress', {
+              uploadId,
+              loaded: progress.loaded,
+              total: progress.total,
+              percent: progress.percent
+            });
+          }
 
           return true;
         }, startPosition);
@@ -369,6 +404,130 @@ const socketHandler = (io) => {
         // 如果还没开始上传，添加到预取消集合
         if (!found) {
           pendingCancels.add(localPath);
+        }
+      }
+    });
+
+    /**
+     * 确认覆盖已存在的文件
+     * 数据格式: { sessionId, localPath, remotePath }
+     */
+    socket.on('sftp-upload-confirm-overwrite', async (data) => {
+      const { sessionId, localPath, remotePath } = data;
+      // 使用计数器确保 uploadId 唯一
+      const uploadId = `${socket.id}-${Date.now()}-${++uploadIdCounter}`;
+
+      try {
+        // 标记该文件已确认覆盖
+        confirmedOverwrites.add(remotePath);
+
+        // 验证参数
+        if (!sessionId || !localPath || !remotePath) {
+          socket.emit('sftp-upload-error', {
+            uploadId,
+            error: '缺少必要参数：sessionId, localPath, remotePath'
+          });
+          return;
+        }
+
+        // 验证本地文件存在
+        if (!fs.existsSync(localPath)) {
+          socket.emit('sftp-upload-error', {
+            uploadId,
+            localPath,
+            error: `本地文件不存在: ${localPath}`
+          });
+          return;
+        }
+
+        // 获取本地文件信息
+        const stats = fs.statSync(localPath);
+        if (!stats.isFile()) {
+          socket.emit('sftp-upload-error', {
+            uploadId,
+            localPath,
+            error: `不支持上传文件夹，请选择文件: ${localPath}`
+          });
+          return;
+        }
+
+        // 从全局 SFTP 连接池获取连接
+        const sftpConnections = require('../routes/sftp-quick-simple').getSftpConnections();
+        if (!sftpConnections || !sftpConnections.has(sessionId)) {
+          socket.emit('sftp-upload-error', {
+            uploadId,
+            error: 'SFTP 会话不存在或已过期，请重新连接'
+          });
+          return;
+        }
+
+        const connectionEntry = sftpConnections.get(sessionId);
+        const sftpHandler = connectionEntry.handler;
+
+        if (!sftpHandler || !sftpHandler.isConnected) {
+          socket.emit('sftp-upload-error', {
+            uploadId,
+            error: 'SFTP 连接已断开，请重新连接'
+          });
+          return;
+        }
+
+        // 存储上传任务（用于取消）
+        const uploadContext = { cancelled: false, localPath };
+        activeUploads.set(uploadId, uploadContext);
+
+        // 发送上传开始事件
+        socket.emit('sftp-upload-started', {
+          uploadId,
+          localPath,
+          remotePath,
+          fileSize: stats.size,
+          fileName: localPath.split(/[/\\]/).pop(),
+          startPosition: 0,
+          isResuming: false,
+          isOverwrite: true
+        });
+
+        // 执行流式上传（覆盖模式）
+        await sftpHandler.uploadFileWithProgress(localPath, remotePath, (progress) => {
+          if (uploadContext.cancelled) {
+            return false;
+          }
+
+          // 只在非检查模式下推送进度事件
+          if (!progress.checkOnly) {
+            socket.emit('sftp-upload-progress', {
+              uploadId,
+              loaded: progress.loaded,
+              total: progress.total,
+              percent: progress.percent
+            });
+          }
+
+          return true;
+        }, 0);
+
+        // 上传完成
+        uploadResumables.delete(localPath);
+        activeUploads.delete(uploadId);
+        socket.emit('sftp-upload-complete', {
+          uploadId,
+          success: true,
+          localPath,
+          remotePath
+        });
+
+      } catch (error) {
+        activeUploads.delete(uploadId);
+
+        if (error.message === '上传已取消') {
+          socket.emit('sftp-upload-cancelled', { uploadId, localPath });
+        } else {
+          console.error('SFTP 上传错误:', error);
+          socket.emit('sftp-upload-error', {
+            uploadId,
+            error: error.message || '上传失败'
+          });
         }
       }
     });

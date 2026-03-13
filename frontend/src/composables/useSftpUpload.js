@@ -132,10 +132,27 @@ export function useSftpUpload() {
     // 监听上传取消
     socket.on('sftp-upload-cancelled', (data) => {
       const { uploadId } = data
-      
+
       const task = uploadTasks.value.find(t => t.uploadId === uploadId)
       if (task) {
         task.status = 'cancelled'
+        task.endTime = Date.now()
+      }
+    })
+
+    // 监听上传冲突（文件已存在）
+    socket.on('sftp-upload-conflict', (data) => {
+      const { uploadId, localPath, remotePath, localSize, remoteSize, fileName } = data
+
+      const task = uploadTasks.value.find(t => t.uploadId === uploadId || t.localPath === localPath)
+      if (task) {
+        task.status = 'conflict'
+        task.conflictInfo = {
+          localSize,
+          remoteSize,
+          fileName,
+          remotePath
+        }
         task.endTime = Date.now()
       }
     })
@@ -225,6 +242,42 @@ export function useSftpUpload() {
   }
 
   /**
+   * 确认覆盖已存在的文件
+   * @param {string} sessionId - SFTP 会话 ID
+   * @param {string} localPath - 本地文件路径
+   * @param {string} remotePath - 远程目标路径
+   */
+  const confirmOverwrite = (sessionId, localPath, remotePath) => {
+    if (socket && socket.connected) {
+      // 找到对应的任务并重置状态
+      const task = uploadTasks.value.find(t => t.localPath === localPath && t.status === 'conflict')
+      if (task) {
+        task.status = 'pending'
+        task.startTime = null
+        task.endTime = null
+      }
+
+      socket.emit('sftp-upload-confirm-overwrite', {
+        sessionId,
+        localPath,
+        remotePath
+      })
+    }
+  }
+
+  /**
+   * 取消冲突任务（用户选择不覆盖）
+   * @param {string} uploadId
+   */
+  const cancelConflict = (uploadId) => {
+    const task = uploadTasks.value.find(t => t.uploadId === uploadId)
+    if (task && task.status === 'conflict') {
+      task.status = 'cancelled'
+      task.endTime = Date.now()
+    }
+  }
+
+  /**
    * 取消所有正在上传的任务
    */
   const cancelAllUploads = () => {
@@ -307,7 +360,8 @@ export function useSftpUpload() {
         uploading: '上传中',
         completed: '已完成',
         error: '失败',
-        cancelled: '已取消'
+        cancelled: '已取消',
+        conflict: '文件冲突'
       }
       return map[task] || task
     }
@@ -318,7 +372,8 @@ export function useSftpUpload() {
       uploading: task?.isResuming ? '续传中' : '上传中',
       completed: '已完成',
       error: '失败',
-      cancelled: '已取消'
+      cancelled: '已取消',
+      conflict: '文件冲突'
     }
     return map[task?.status] || task?.status
   }
@@ -332,6 +387,7 @@ export function useSftpUpload() {
       socket.off('sftp-upload-complete')
       socket.off('sftp-upload-error')
       socket.off('sftp-upload-cancelled')
+      socket.off('sftp-upload-conflict')
       socket.disconnect()
       socket = null
     }
@@ -351,6 +407,8 @@ export function useSftpUpload() {
     addUploadTask,
     addUploadTasks,
     cancelUpload,
+    confirmOverwrite,
+    cancelConflict,
     cancelAllUploads,
     clearCompletedTasks,
     clearAllFinishedTasks,

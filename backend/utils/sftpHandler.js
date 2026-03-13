@@ -211,6 +211,11 @@ class SftpHandler {
           return;
         }
 
+        // 每次收到数据都检查取消状态（确保及时响应取消请求）
+        if (checkCancelled()) {
+          return;
+        }
+
         loaded += chunk.length;
         const percent = Math.floor((loaded / totalSize) * 100);
 

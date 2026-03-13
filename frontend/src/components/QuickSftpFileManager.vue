@@ -199,6 +199,26 @@
               class="task-retry-btn"
               @click="removeTask(task.uploadId)"
             >关闭</button>
+            <!-- 冲突状态：显示覆盖/取消按钮 -->
+            <template v-if="task.status === 'conflict'">
+              <button 
+                class="task-overwrite-btn" 
+                @click="handleConfirmOverwrite(task)"
+              >覆盖</button>
+              <button 
+                class="task-cancel-btn" 
+                @click="cancelConflict(task.uploadId)"
+              >取消</button>
+            </template>
+          </div>
+
+          <!-- 冲突信息 -->
+          <div v-if="task.status === 'conflict' && task.conflictInfo" class="task-conflict-info">
+            <el-icon><Warning /></el-icon>
+            <span>
+              远程文件已存在 ({{ formatUploadSize(task.conflictInfo.remoteSize) }})，
+              本地文件 ({{ formatUploadSize(task.conflictInfo.localSize) }})
+            </span>
           </div>
 
           <!-- 错误信息 -->
@@ -261,7 +281,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { VueMonacoEditor } from '@guolao/vue-monaco-editor';
 import { 
   ArrowUp, Refresh, FolderAdd, Upload, Delete, Loading, 
-  Folder, Document, Right
+  Folder, Document, Right, Warning
 } from '@element-plus/icons-vue'
 import { useThemeStore } from '@/stores/theme'
 import { useSftpUpload } from '@/composables/useSftpUpload'
@@ -279,6 +299,8 @@ const {
   allTasksCancelled,
   addUploadTasks,
   cancelUpload,
+  confirmOverwrite,
+  cancelConflict,
   cancelAllUploads,
   clearAllFinishedTasks,
   removeTask,
@@ -591,6 +613,19 @@ const handleUploadDone = () => {
   clearCompletedTasks();
   refreshDirectory();
   ElMessage.success('文件上传完成');
+};
+
+/**
+ * 确认覆盖已存在的文件
+ */
+const handleConfirmOverwrite = (task) => {
+  if (task.localPath && task.conflictInfo?.remotePath) {
+    confirmOverwrite(
+      props.sftp.sessionId.value,
+      task.localPath,
+      task.conflictInfo.remotePath
+    );
+  }
 };
 
 const handleCreateDirectory = async () => {
@@ -954,6 +989,15 @@ onMounted(() => {
   opacity: 0.6;
 }
 
+.upload-task-item.conflict {
+  border-color: #ff9800;
+  background: #fff8e1;
+}
+
+.dark-theme .upload-task-item.conflict {
+  background: rgba(255, 152, 0, 0.1);
+}
+
 .task-info {
   display: flex;
   justify-content: space-between;
@@ -998,7 +1042,22 @@ onMounted(() => {
   color: #d32f2f;
 }
 
+.upload-task-item.error .task-status {
+  background: #ffebee;
+  color: #d32f2f;
+}
+
 .upload-task-item.cancelled .task-status {
+  background: #f5f5f5;
+  color: #757575;
+}
+
+.upload-task-item.conflict .task-status {
+  background: #fff3e0;
+  color: #e65100;
+}
+
+.dark-theme .upload-task-item.cancelled .task-status {
   background: #fff3e0;
   color: #f57c00;
 }
@@ -1105,6 +1164,22 @@ onMounted(() => {
   background: #d32f2f;
 }
 
+.task-overwrite-btn {
+  padding: 3px 10px;
+  font-size: 11px;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background 0.2s;
+  background: #ff9800;
+  color: #fff;
+  margin-right: 6px;
+}
+
+.task-overwrite-btn:hover {
+  background: #f57c00;
+}
+
 .task-retry-btn {
   background: #9e9e9e;
   color: #fff;
@@ -1127,6 +1202,24 @@ onMounted(() => {
 .dark-theme .task-error {
   background: rgba(100, 30, 30, 0.5);
   color: #ef9a9a;
+}
+
+/* 任务冲突信息 */
+.task-conflict-info {
+  margin-top: 6px;
+  padding: 6px 8px;
+  background: #fff8e1;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #e65100;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dark-theme .task-conflict-info {
+  background: rgba(255, 152, 0, 0.15);
+  color: #ffb74d;
 }
 
 /* 拖拽上传遮罩层 */
