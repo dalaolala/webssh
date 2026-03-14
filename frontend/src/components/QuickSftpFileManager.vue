@@ -227,6 +227,92 @@
       </div>
     </div>
 
+    <!-- 下载进度区域 -->
+    <div v-if="downloadTasks.length > 0" class="download-progress-area">
+      <!-- 顶部汇总信息 -->
+      <div class="download-summary">
+        <span class="summary-text">
+          <el-icon class="summary-icon"><Download /></el-icon>
+          下载中 ({{ downloadTasks.filter(t => t.status === 'downloading' || t.status === 'paused').length }} 个文件)
+        </span>
+        <div class="summary-actions">
+          <button class="clear-all-btn" @click="clearCompletedDownloadTasks">清除已完成</button>
+        </div>
+      </div>
+
+      <!-- 每个文件的进度条 -->
+      <div class="download-tasks-list">
+        <div 
+          v-for="task in downloadTasks" 
+          :key="task.taskId" 
+          class="download-task-item"
+          :class="task.status"
+        >
+          <div class="task-info">
+            <span class="task-filename">{{ task.fileName }}</span>
+            <span class="task-status">
+              {{ 
+                task.status === 'downloading' ? '下载中' : 
+                (task.status === 'paused' ? '已暂停' : 
+                (task.status === 'completed' ? '已完成' : 
+                (task.status === 'cancelled' ? '已取消' : '失败'))) 
+              }}
+            </span>
+          </div>
+          
+          <div class="task-progress">
+            <div class="progress-track-mini download-track">
+              <div 
+                class="progress-fill-mini download-fill" 
+                :style="{ width: task.progress + '%' }"
+                :class="task.status"
+              ></div>
+            </div>
+            <span class="progress-percent">{{ task.progress }}%</span>
+            <span v-if="task.loaded && task.total" class="progress-size">
+              {{ formatUploadSize(task.loaded) }} / {{ formatUploadSize(task.total) }}
+            </span>
+            <span v-if="task.isResume" class="resume-badge">续传</span>
+          </div>
+
+          <!-- 任务操作按钮 -->
+          <div class="task-actions">
+            <!-- 下载中：显示暂停和取消按钮 -->
+            <template v-if="task.status === 'downloading'">
+              <button 
+                class="task-pause-btn" 
+                @click="pauseDownloadTask(task)"
+              >暂停</button>
+              <button 
+                class="task-cancel-btn" 
+                @click="cancelDownloadTask(task)"
+              >取消</button>
+            </template>
+            <!-- 已暂停：显示继续和取消按钮 -->
+            <template v-if="task.status === 'paused'">
+              <button 
+                class="task-resume-btn" 
+                @click="resumeDownloadTask(task)"
+              >继续</button>
+              <button 
+                class="task-cancel-btn" 
+                @click="cancelDownloadTask(task)"
+              >取消</button>
+            </template>
+            <!-- 错误：显示关闭按钮 -->
+            <button 
+              v-if="task.status === 'error'" 
+              class="task-retry-btn"
+              @click="removeDownloadTask(task.taskId)"
+            >关闭</button>
+          </div>
+
+          <!-- 错误信息 -->
+          <div v-if="task.error" class="task-error">{{ task.error }}</div>
+        </div>
+      </div>
+    </div>
+
     <!-- 对话框 -->
     <el-dialog v-model="showCreateDirDialog" title="新建文件夹" width="400px">
       <el-form :model="createDirForm" label-width="80px">
@@ -281,7 +367,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { VueMonacoEditor } from '@guolao/vue-monaco-editor';
 import { 
   ArrowUp, Refresh, FolderAdd, Upload, Delete, Loading, 
-  Folder, Document, Right, Warning
+  Folder, Document, Right, Warning, Download
 } from '@element-plus/icons-vue'
 import { useThemeStore } from '@/stores/theme'
 import { useSftpUpload } from '@/composables/useSftpUpload'
@@ -319,6 +405,12 @@ const fileInput = ref(null);
 
 // 拖拽上传状态
 const isDragOver = ref(false);
+
+// 下载任务列表
+const downloadTasks = ref([]);
+
+// 下载任务的本地路径映射（用于恢复下载）
+const downloadLocalPaths = new Map();
 
 // 响应式数据
 const showCreateDirDialog = ref(false);
@@ -441,12 +533,227 @@ const getLanguage = (path) => {
 };
 
 const handleDownload = async (file) => {
+  // 创建下载任务
+  const taskId = `download-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  const task = {
+    taskId,
+    fileName: file.name,
+    filePath: file.path,
+    fileSize: file.size,
+    status: 'downloading',
+    progress: 0,
+    loaded: 0,
+    total: file.size || 0,
+    error: null,
+    localPath: null,
+    isResume: false
+  };
+  
+  downloadTasks.value.push(task);
+  
   try {
-    await props.sftp.downloadFile(file.path, file.name);
-    ElMessage.success('下载成功');
+    // 使用带保存对话框的下载方法（Electron 环境）
+    // 非 Electron 环境会自动回退到浏览器下载
+    const result = await props.sftp.downloadFileWithDialog(
+      file.path, 
+      file.name, 
+      (progress) => {
+        const t = downloadTasks.value.find(item => item.taskId === taskId);
+        if (t) {
+          t.loaded = progress.loaded;
+          t.total = progress.total;
+          t.progress = progress.percent;
+          t.isResume = progress.isResume || false;
+        }
+      },
+      // onCancel
+      () => {
+        const t = downloadTasks.value.find(item => item.taskId === taskId);
+        if (t) {
+          t.status = 'cancelled';
+          t.error = '下载已取消';
+        }
+      },
+      // onPause
+      (localPath) => {
+        const t = downloadTasks.value.find(item => item.taskId === taskId);
+        if (t) {
+          t.status = 'paused';
+          t.localPath = localPath;
+          downloadLocalPaths.set(file.path, localPath);
+        }
+      }
+    );
+    
+    // 用户取消下载
+    if (result === false) {
+      const idx = downloadTasks.value.findIndex(item => item.taskId === taskId);
+      if (idx !== -1) {
+        downloadTasks.value.splice(idx, 1);
+      }
+      return;
+    }
+    
+    // 下载被暂停
+    if (result && result.paused) {
+      const t = downloadTasks.value.find(item => item.taskId === taskId);
+      if (t) {
+        t.status = 'paused';
+        if (result.localPath) {
+          t.localPath = result.localPath;
+          downloadLocalPaths.set(file.path, result.localPath);
+        }
+      }
+      return;
+    }
+    
+    // 下载完成
+    const t = downloadTasks.value.find(item => item.taskId === taskId);
+    if (t) {
+      t.status = 'completed';
+      t.progress = 100;
+      t.localPath = result?.localPath;
+    }
+    
+    // 清理映射
+    downloadLocalPaths.delete(file.path);
+    
+    // 3秒后自动移除已完成的任务
+    setTimeout(() => {
+      const idx = downloadTasks.value.findIndex(item => item.taskId === taskId);
+      if (idx !== -1 && downloadTasks.value[idx].status === 'completed') {
+        downloadTasks.value.splice(idx, 1);
+      }
+    }, 3000);
+    
   } catch (err) {
+    const t = downloadTasks.value.find(item => item.taskId === taskId);
+    if (t) {
+      t.status = 'error';
+      t.error = err.message;
+    }
     ElMessage.error('下载失败: ' + err.message);
   }
+};
+
+// 移除下载任务
+const removeDownloadTask = (taskId) => {
+  const idx = downloadTasks.value.findIndex(item => item.taskId === taskId);
+  if (idx !== -1) {
+    downloadTasks.value.splice(idx, 1);
+  }
+};
+
+// 取消下载任务
+const cancelDownloadTask = async (task) => {
+  try {
+    // 先更新UI状态
+    task.status = 'cancelled';
+    task.error = '正在取消...';
+    
+    await props.sftp.cancelDownload(task.filePath);
+    
+    task.error = '下载已取消';
+    downloadLocalPaths.delete(task.filePath);
+    ElMessage.info('已取消下载');
+  } catch (err) {
+    console.error('取消下载失败:', err);
+    task.status = 'error';
+    task.error = '取消下载失败: ' + err.message;
+    ElMessage.error('取消下载失败: ' + err.message);
+  }
+};
+
+// 暂停下载任务
+const pauseDownloadTask = async (task) => {
+  try {
+    task.status = 'paused';
+    task.error = '正在暂停...';
+    
+    const result = await props.sftp.pauseDownload(task.filePath);
+    
+    if (result.success) {
+      task.error = null;
+      // 保存 localPath 用于恢复下载（优先使用后端返回的，其次使用已有的）
+      if (result.localPath) {
+        task.localPath = result.localPath;
+        downloadLocalPaths.set(task.filePath, result.localPath);
+      } else if (!task.localPath) {
+        task.localPath = downloadLocalPaths.get(task.filePath);
+      }
+      ElMessage.info('下载已暂停');
+    } else {
+      task.status = 'downloading';
+      task.error = result.message || '暂停失败';
+    }
+  } catch (err) {
+    console.error('暂停下载失败:', err);
+    task.status = 'downloading';
+    task.error = '暂停下载失败: ' + err.message;
+    ElMessage.error('暂停下载失败: ' + err.message);
+  }
+};
+
+// 恢复下载任务（断点续传）
+const resumeDownloadTask = async (task) => {
+  try {
+    task.status = 'downloading';
+    task.error = null;
+    
+    // 获取 localPath（优先从 task 获取，其次从 Map 获取）
+    let localPath = task.localPath;
+    if (!localPath) {
+      localPath = downloadLocalPaths.get(task.filePath);
+    }
+    
+    if (!localPath) {
+      throw new Error('无法获取本地路径，请重新下载');
+    }
+    
+    const result = await props.sftp.resumeDownload(
+      task.filePath, 
+      localPath,
+      (progress) => {
+        task.loaded = progress.loaded;
+        task.total = progress.total;
+        task.progress = progress.percent;
+        task.isResume = progress.isResume || true;
+      }
+    );
+    
+    // 下载被暂停
+    if (result && result.paused) {
+      task.status = 'paused';
+      return;
+    }
+    
+    // 下载完成
+    if (result && result.success) {
+      task.status = 'completed';
+      task.progress = 100;
+      downloadLocalPaths.delete(task.filePath);
+      
+      // 3秒后自动移除已完成的任务
+      setTimeout(() => {
+        const idx = downloadTasks.value.findIndex(item => item.taskId === task.taskId);
+        if (idx !== -1 && downloadTasks.value[idx].status === 'completed') {
+          downloadTasks.value.splice(idx, 1);
+        }
+      }, 3000);
+    }
+  } catch (err) {
+    console.error('恢复下载失败:', err);
+    task.status = 'error';
+    task.error = '恢复下载失败: ' + err.message;
+    ElMessage.error('恢复下载失败: ' + err.message);
+  }
+};
+
+// 清空所有已完成/已取消的下载任务
+const clearCompletedDownloadTasks = () => {
+  downloadTasks.value = downloadTasks.value.filter(item => 
+    item.status === 'downloading' || item.status === 'paused'
+  );
 };
 
 const handleDelete = async (file) => {
@@ -1282,5 +1589,186 @@ onMounted(() => {
 
 .sftp-file-manager.drag-over {
   position: relative;
+}
+
+/* 下载进度区域样式 */
+.download-progress-area {
+  background: #e8f5e9;
+  border-bottom: 1px solid #a5d6a7;
+  max-height: 250px;
+  overflow-y: auto;
+}
+
+.dark-theme .download-progress-area {
+  background: rgba(46, 125, 50, 0.15);
+  border-bottom: 1px solid rgba(76, 175, 80, 0.3);
+}
+
+.download-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+  border-bottom: 1px solid #a5d6a7;
+  background: #fff;
+}
+
+.dark-theme .download-summary {
+  background: rgba(40, 60, 40, 0.9);
+  border-bottom: 1px solid rgba(76, 175, 80, 0.2);
+}
+
+.download-summary .summary-text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #2e7d32;
+}
+
+.dark-theme .download-summary .summary-text {
+  color: #81c784;
+}
+
+.download-summary .summary-icon {
+  font-size: 16px;
+}
+
+/* 下载任务列表 */
+.download-tasks-list {
+  padding: 8px;
+}
+
+.download-task-item {
+  background: #fff;
+  border: 1px solid #c8e6c9;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  transition: all 0.2s;
+}
+
+.dark-theme .download-task-item {
+  background: rgba(50, 70, 50, 0.8);
+  border-color: rgba(76, 175, 80, 0.2);
+}
+
+.download-task-item:last-child {
+  margin-bottom: 0;
+}
+
+.download-task-item.completed {
+  border-color: #4caf50;
+}
+
+.download-task-item.error {
+  border-color: #f44336;
+}
+
+.download-task-item.cancelled {
+  border-color: #ff9800;
+  opacity: 0.7;
+}
+
+/* 下载进度条颜色 */
+.progress-track-mini.download-track {
+  background: #e8f5e9;
+}
+
+.dark-theme .progress-track-mini.download-track {
+  background: #2a3a2a;
+}
+
+.progress-fill-mini.download-fill {
+  background: linear-gradient(90deg, #4caf50, #8bc34a);
+}
+
+.progress-fill-mini.download-fill.error {
+  background: #f44336;
+}
+
+.progress-fill-mini.download-fill.cancelled {
+  background: #ff9800;
+}
+
+.download-task-item.cancelled .task-status {
+  background: #fff3e0;
+  color: #e65100;
+}
+
+.dark-theme .download-task-item.cancelled .task-status {
+  background: rgba(255, 152, 0, 0.3);
+  color: #ffb74d;
+}
+
+/* 暂停状态样式 */
+.download-task-item.paused {
+  border-color: #ff9800;
+  background: #fff8e1;
+}
+
+.dark-theme .download-task-item.paused {
+  background: rgba(255, 152, 0, 0.1);
+  border-color: rgba(255, 152, 0, 0.3);
+}
+
+.download-task-item.paused .task-status {
+  background: #fff3e0;
+  color: #e65100;
+}
+
+.dark-theme .download-task-item.paused .task-status {
+  background: rgba(255, 152, 0, 0.3);
+  color: #ffb74d;
+}
+
+.progress-fill-mini.download-fill.paused {
+  background: #ff9800;
+}
+
+/* 暂停和继续按钮样式 */
+.task-pause-btn,
+.task-resume-btn {
+  padding: 3px 10px;
+  font-size: 11px;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background 0.2s;
+  margin-right: 6px;
+}
+
+.task-pause-btn {
+  background: #ff9800;
+  color: #fff;
+}
+
+.task-pause-btn:hover {
+  background: #f57c00;
+}
+
+.task-resume-btn {
+  background: #4caf50;
+  color: #fff;
+}
+
+.task-resume-btn:hover {
+  background: #388e3c;
+}
+
+/* 续传标记 */
+.resume-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: #e3f2fd;
+  color: #1976d2;
+  margin-left: 6px;
+}
+
+.dark-theme .resume-badge {
+  background: rgba(25, 118, 210, 0.3);
+  color: #64b5f6;
 }
 </style>

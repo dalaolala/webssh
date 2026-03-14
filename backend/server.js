@@ -70,6 +70,9 @@ app.post('/api/quick-connect', (req, res) => {
 // Socket.io connection handling
 socketHandler(io);
 
+// 设置全局 io 实例，供路由使用
+global.ioInstance = io;
+
 // Serve frontend for production
 if (process.env.NODE_ENV === 'production' || process.versions.hasOwnProperty('electron')) {
   app.use(express.static(frontendDistPath));

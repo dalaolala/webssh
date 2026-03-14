@@ -142,6 +142,9 @@ function startBackend(port = 3000) {
   // Socket.io connection handling
   socketHandler(io);
 
+  // 设置全局 io 实例，供路由使用
+  global.ioInstance = io;
+
   // Serve frontend for production
   app.use(express.static(frontendDistPath));
 
@@ -372,6 +375,18 @@ function createWindow() {
 // IPC 处理程序
 ipcMain.handle('get-backend-port', () => {
   return currentBackendPort || DEFAULT_PORT;
+});
+
+// 显示保存对话框
+ipcMain.handle('show-save-dialog', async (event, options) => {
+  const result = await dialog.showSaveDialog(mainWindow, options);
+  return result;
+});
+
+// 显示打开目录对话框
+ipcMain.handle('show-open-dialog', async (event, options) => {
+  const result = await dialog.showOpenDialog(mainWindow, options);
+  return result;
 });
 
 // 当第二个实例启动时，激活已有窗口
