@@ -917,7 +917,7 @@ const handleDrop = (event) => {
  * 上传完成后刷新目录
  */
 const handleUploadDone = () => {
-  clearCompletedTasks();
+  clearAllFinishedTasks();
   refreshDirectory();
   ElMessage.success('文件上传完成');
 };
