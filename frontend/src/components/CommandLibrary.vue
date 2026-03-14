@@ -125,11 +125,14 @@
                 <span>新建片段</span>
               </button>
               <div class="cmd-snippet-io">
-                <button class="cmd-icon-btn" @click="exportSnippets" title="导出">
+                <button class="cmd-icon-btn" @click="exportSnippets" title="导出到本地">
                   <el-icon size="13"><Download /></el-icon>
                 </button>
-                <button class="cmd-icon-btn" @click="triggerSnippetImport" title="导入">
+                <button class="cmd-icon-btn" @click="triggerSnippetImport" title="从本地导入">
                   <el-icon size="13"><Upload /></el-icon>
+                </button>
+                <button class="cmd-icon-btn cmd-icon-btn--cloud" @click="openCloudSync" title="WebDAV 云同步">
+                  <el-icon size="13"><Cloudy /></el-icon>
                 </button>
                 <input
                   type="file"
@@ -258,6 +261,82 @@
         </div>
       </Transition>
     </Teleport>
+
+    <!-- WebDAV 云同步弹窗 -->
+    <Teleport to="body">
+      <Transition name="snip-dialog">
+        <div v-if="showCloudSync" class="snip-mask" @mousedown.self="showCloudSync = false">
+          <div class="snip-dialog cloud-sync-dialog">
+            <!-- 头部 -->
+            <div class="snip-header">
+              <div class="snip-header-left">
+                <div class="snip-header-icon cloud-icon">
+                  <el-icon size="13"><Cloudy /></el-icon>
+                </div>
+                <span class="snip-header-title">WebDAV 云同步</span>
+              </div>
+              <button class="snip-close" @click="showCloudSync = false">
+                <svg viewBox="0 0 10 10" fill="none" width="10" height="10">
+                  <path d="M2.5 2.5l5 5M7.5 2.5l-5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+                </svg>
+              </button>
+            </div>
+
+            <!-- 内容区 -->
+            <div class="snip-body">
+              <!-- 已配置，显示同步操作 -->
+              <div class="cloud-actions">
+                <div class="cloud-status">
+                  <el-icon size="14"><Cloudy /></el-icon>
+                  <span>已连接 WebDAV</span>
+                </div>
+
+                <!-- 片段文件路径配置 -->
+                <div class="snip-field">
+                  <label class="snip-label">片段文件路径</label>
+                  <div class="cloud-path-row">
+                    <input
+                      v-model="snippetPath"
+                      class="snip-input"
+                      placeholder="snippets.enc"
+                      @change="saveSnippetPath"
+                    />
+                  </div>
+                  <div class="cloud-path-hint">相对于 WebDAV 根目录的文件名，如 snippets.enc</div>
+                </div>
+                
+                <div class="cloud-sync-cards">
+                  <div class="cloud-sync-card upload-card" @click="uploadToCloud" :class="{ loading: cloudUploading }">
+                    <div class="cloud-sync-icon">
+                      <el-icon size="24"><Upload /></el-icon>
+                    </div>
+                    <div class="cloud-sync-info">
+                      <div class="cloud-sync-title">上传到云端</div>
+                      <div class="cloud-sync-desc">将 {{ privateSnippets.length }} 条片段加密后上传</div>
+                    </div>
+                  </div>
+                  
+                  <div class="cloud-sync-card download-card" @click="downloadFromCloud" :class="{ loading: cloudDownloading }">
+                    <div class="cloud-sync-icon">
+                      <el-icon size="24"><Download /></el-icon>
+                    </div>
+                    <div class="cloud-sync-info">
+                      <div class="cloud-sync-title">从云端下载</div>
+                      <div class="cloud-sync-desc">下载并合并到本地片段库</div>
+                    </div>
+                  </div>
+                </div>
+                
+                <div v-if="lastCloudSync" class="cloud-last-sync">
+                  <el-icon size="11"><Clock /></el-icon>
+                  上次同步：{{ lastCloudSync }}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -266,10 +345,11 @@ import { ref, computed, reactive } from 'vue'
 import {
   CopyDocument, Search, Edit, Delete, Plus, Download, Upload,
   Monitor, Folder, Connection, Cpu, Box, Lock,
-  VideoPlay, ArrowDown, Close, InfoFilled, DocumentAdd, Tickets
+  VideoPlay, ArrowDown, Close, InfoFilled, DocumentAdd, Tickets, Cloudy, Clock
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import commonCommandsData from '@/assets/commands.json'
+import CryptoJS from 'crypto-js'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false }
@@ -435,6 +515,265 @@ const importSnippets = (e) => {
     e.target.value = ''
   }
   reader.readAsText(file)
+}
+
+// ========== WebDAV 云同步 ==========
+const showCloudSync = ref(false)
+const cloudUploading = ref(false)
+const cloudDownloading = ref(false)
+const lastCloudSync = ref('')
+
+// 复用主机列表的 WebDAV 配置（存储在同一个 key）
+const WEBDAV_CONFIG_KEY = 'webssh_webdav_config'
+const SNIPPET_PATH_KEY = 'webssh_snippets_cloud_path'
+const CLOUD_LAST_SYNC_KEY = 'webssh_snippets_cloud_last_sync'
+
+// 片段文件的相对路径（相对于 WebDAV 基础 URL）
+const snippetPath = ref('snippets.enc')
+
+// 从主机列表配置中加载 WebDAV 基础配置
+const webdavBaseConfig = reactive({
+  url: '',
+  username: '',
+  password: '',
+  encryptKey: ''
+})
+
+// 加载配置
+const loadCloudConfig = () => {
+  try {
+    // 加载 WebDAV 基础配置（复用主机列表的配置）
+    const raw = localStorage.getItem(WEBDAV_CONFIG_KEY)
+    if (raw) {
+      const saved = JSON.parse(raw)
+      webdavBaseConfig.url = saved.url || ''
+      webdavBaseConfig.username = saved.username || ''
+      webdavBaseConfig.password = saved.password || ''
+      webdavBaseConfig.encryptKey = saved.encryptKey || ''
+    }
+    // 加载片段文件路径
+    snippetPath.value = localStorage.getItem(SNIPPET_PATH_KEY) || 'snippets.enc'
+    lastCloudSync.value = localStorage.getItem(CLOUD_LAST_SYNC_KEY) || ''
+  } catch {
+    // ignore
+  }
+}
+
+// 保存片段路径
+const saveSnippetPath = () => {
+  localStorage.setItem(SNIPPET_PATH_KEY, snippetPath.value)
+}
+
+// 计算完整的片段 URL
+const getSnippetUrl = () => {
+  if (!webdavBaseConfig.url || !snippetPath.value) return ''
+  
+  // 如果片段路径已经是完整 URL，直接返回
+  if (snippetPath.value.startsWith('http://') || snippetPath.value.startsWith('https://')) {
+    return snippetPath.value
+  }
+  
+  // 否则拼接基础 URL 和片段路径
+  const baseUrl = webdavBaseConfig.url.replace(/\/[^/]*$/, '') // 去掉原文件名
+  const path = snippetPath.value.startsWith('/') ? snippetPath.value : '/' + snippetPath.value
+  return baseUrl + path
+}
+
+// 上传到云端
+const uploadToCloud = async () => {
+  if (!webdavBaseConfig.url) {
+    ElMessage.warning('请先在主机列表中配置 WebDAV')
+    return
+  }
+  if (privateSnippets.value.length === 0) {
+    ElMessage.warning('没有片段可上传')
+    return
+  }
+
+  let encryptKey = webdavBaseConfig.encryptKey
+  if (!encryptKey) {
+    try {
+      const { value } = await ElMessageBox.prompt(
+        '请输入加密密钥（至少6位），用于保护云端数据：',
+        '设置加密密钥',
+        {
+          confirmButtonText: '确认上传',
+          cancelButtonText: '取消',
+          inputType: 'password',
+          inputValidator: (v) => (!v || v.trim().length < 6) ? '密钥至少6位' : true
+        }
+      )
+      encryptKey = value.trim()
+    } catch {
+      return
+    }
+  }
+
+  cloudUploading.value = true
+  try {
+    const jsonStr = JSON.stringify(privateSnippets.value, null, 2)
+    const encryptedContent = CryptoJS.AES.encrypt(jsonStr, encryptKey).toString()
+    const fullUrl = getSnippetUrl()
+
+    const res = await fetch('/api/webdav/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url: fullUrl,
+        username: webdavBaseConfig.username,
+        password: webdavBaseConfig.password,
+        content: encryptedContent
+      })
+    })
+    const result = await res.json()
+    
+    // 先关闭弹窗
+    showCloudSync.value = false
+    
+    if (result.success) {
+      const now = new Date().toLocaleString('zh-CN')
+      lastCloudSync.value = now
+      localStorage.setItem(CLOUD_LAST_SYNC_KEY, now)
+      ElMessage.success(`已将 ${privateSnippets.value.length} 条片段上传到云端`)
+    } else {
+      ElMessage.error(result.message || '上传失败')
+    }
+  } catch (e) {
+    showCloudSync.value = false
+    ElMessage.error('上传失败：' + e.message)
+  } finally {
+    cloudUploading.value = false
+  }
+}
+
+// 从云端下载
+const downloadFromCloud = async () => {
+  if (!webdavBaseConfig.url) {
+    ElMessage.warning('请先在主机列表中配置 WebDAV')
+    return
+  }
+
+  let encryptKey = webdavBaseConfig.encryptKey
+  if (!encryptKey) {
+    try {
+      const { value } = await ElMessageBox.prompt(
+        '请输入加密密钥（上传时设置的密钥）：',
+        '输入解密密钥',
+        {
+          confirmButtonText: '确认下载',
+          cancelButtonText: '取消',
+          inputType: 'password',
+          inputValidator: (v) => (!v || v.trim().length < 6) ? '密钥至少6位' : true
+        }
+      )
+      encryptKey = value.trim()
+    } catch {
+      return
+    }
+  }
+
+  cloudDownloading.value = true
+  try {
+    const fullUrl = getSnippetUrl()
+    const res = await fetch('/api/webdav/download', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url: fullUrl,
+        username: webdavBaseConfig.username,
+        password: webdavBaseConfig.password
+      })
+    })
+    const result = await res.json()
+    
+    if (!result.success) {
+      showCloudSync.value = false
+      ElMessage.error(result.message || '下载失败')
+      return
+    }
+
+    // 解密
+    let jsonStr = ''
+    try {
+      const bytes = CryptoJS.AES.decrypt(result.content, encryptKey)
+      jsonStr = bytes.toString(CryptoJS.enc.Utf8)
+      if (!jsonStr) throw new Error('解密内容为空')
+    } catch {
+      showCloudSync.value = false
+      ElMessage.error('解密失败，请确认密钥是否正确')
+      return
+    }
+
+    const imported = JSON.parse(jsonStr)
+    if (!Array.isArray(imported)) {
+      showCloudSync.value = false
+      ElMessage.error('文件格式错误')
+      return
+    }
+
+    const valid = imported.filter(item => item.name && item.command)
+    if (valid.length === 0) {
+      showCloudSync.value = false
+      ElMessage.warning('云端没有有效的片段')
+      return
+    }
+
+    // 合并：以 name+command 去重
+    const existingSet = new Set(privateSnippets.value.map(s => s.name.trim() + '|' + s.command.trim()))
+    const newItems = []
+    valid.forEach(item => {
+      const key = item.name.trim() + '|' + item.command.trim()
+      if (!existingSet.has(key)) {
+        existingSet.add(key)
+        newItems.push({ ...item, id: Date.now() + Math.random() })
+      }
+    })
+
+    // 先关闭弹窗
+    showCloudSync.value = false
+
+    if (newItems.length) {
+      privateSnippets.value = [...newItems, ...privateSnippets.value]
+      savePrivateSnippets()
+      const skipped = valid.length - newItems.length
+      ElMessage.success(skipped > 0
+        ? `合并 ${newItems.length} 条片段，跳过 ${skipped} 条重复`
+        : `成功合并 ${newItems.length} 条片段`)
+    } else {
+      ElMessage.info('云端片段均已存在')
+    }
+
+    const now = new Date().toLocaleString('zh-CN')
+    lastCloudSync.value = now
+    localStorage.setItem(CLOUD_LAST_SYNC_KEY, now)
+  } catch (e) {
+    showCloudSync.value = false
+    ElMessage.error('下载失败：' + e.message)
+  } finally {
+    cloudDownloading.value = false
+  }
+}
+
+// 初始化加载配置
+loadCloudConfig()
+
+// 打开云同步弹窗前检查配置
+const openCloudSync = () => {
+  loadCloudConfig() // 重新加载配置
+  
+  // 检查是否配置了 WebDAV
+  if (!webdavBaseConfig.url) {
+    ElMessage.warning('请先在主机列表中配置 WebDAV 服务器地址')
+    return
+  }
+  
+  // 检查是否配置了加密密钥
+  if (!webdavBaseConfig.encryptKey) {
+    ElMessage.warning('请先在主机列表中配置 WebDAV 加密密钥')
+    return
+  }
+  
+  showCloudSync.value = true
 }
 </script>
 
@@ -1126,6 +1465,159 @@ const importSnippets = (e) => {
 .snip-dialog-leave-to {
   opacity: 0;
   transform: scale(0.94) translateY(8px);
+}
+
+/* ===== WebDAV 云同步样式 ===== */
+.cmd-icon-btn--cloud {
+  background: linear-gradient(135deg, #1e3a5f, #2a4a6f);
+  color: #89b4fa;
+}
+.cmd-icon-btn--cloud:hover {
+  background: linear-gradient(135deg, #89b4fa, #74c7ec);
+  color: #1e1e2e;
+}
+
+.cloud-sync-dialog {
+  width: 480px;
+}
+
+.cloud-path-row {
+  display: flex;
+  gap: 8px;
+}
+
+.cloud-path-hint {
+  font-size: 11px;
+  color: #45475a;
+  margin-top: 4px;
+}
+
+.cloud-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.cloud-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #181825;
+  border-radius: 8px;
+  font-size: 12px;
+  color: #6c7086;
+}
+
+.cloud-status span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #89b4fa;
+}
+
+.cloud-edit-btn {
+  background: transparent;
+  border: none;
+  color: #6c7086;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: all 0.15s;
+}
+
+.cloud-edit-btn:hover {
+  background: #313244;
+  color: #cdd6f4;
+}
+
+.cloud-sync-cards {
+  display: flex;
+  gap: 10px;
+}
+
+.cloud-sync-card {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  background: #181825;
+  border: 1px solid #313244;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.cloud-sync-card:hover {
+  border-color: #45475a;
+  background: #1e1e2e;
+}
+
+.cloud-sync-card.loading {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.cloud-sync-card.upload-card:hover {
+  border-color: #89b4fa;
+}
+
+.cloud-sync-card.download-card:hover {
+  border-color: #a6e3a1;
+}
+
+.cloud-sync-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.upload-card .cloud-sync-icon {
+  background: rgba(137, 180, 250, 0.1);
+  color: #89b4fa;
+}
+
+.download-card .cloud-sync-icon {
+  background: rgba(166, 227, 161, 0.1);
+  color: #a6e3a1;
+}
+
+.cloud-sync-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.cloud-sync-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #cdd6f4;
+  margin-bottom: 3px;
+}
+
+.cloud-sync-desc {
+  font-size: 11px;
+  color: #6c7086;
+}
+
+.cloud-last-sync {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #45475a;
+  padding-top: 8px;
+  border-top: 1px solid #313244;
+}
+
+.cloud-icon {
+  background: linear-gradient(135deg, #1e3a5f, #2a4a6f) !important;
 }
 </style>
 
