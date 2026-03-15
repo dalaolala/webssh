@@ -2,6 +2,8 @@
 
 一个基于Web的SSH终端工具，提供完整的Web版SSH客户端体验。
 
+> **🖥️ 桌面版下载**: [https://github.com/dalaolala/webssh/releases](https://github.com/dalaolala/webssh/releases)
+
 ## ✨ 核心功能
 
 - **用户认证**: 注册、登录、JWT令牌认证
